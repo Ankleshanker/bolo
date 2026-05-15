@@ -171,7 +171,7 @@ export class GameScene extends Phaser.Scene {
     this.pillboxBullets.update(delta);
     this.clearForestUnderBullets();
     this.pillboxes.update(delta, this.tank.x, this.tank.y, this.pillboxBullets, inForest,
-      () => this.soundManager.playPillboxFire());
+      (px, py) => this.soundManager.playPillboxFire(this.soundDist(px, py)));
     this.builder.update(delta);
 
     this.checkPillPickup();
@@ -318,6 +318,7 @@ export class GameScene extends Phaser.Scene {
   private startSinking() {
     this._sinking = true;
     this.tank.body.setVelocity(0, 0);
+    this.soundManager.playTankSinking();
     this.tweens.add({
       targets:  this.tank.sprite,
       scaleX:   0,
@@ -363,6 +364,7 @@ export class GameScene extends Phaser.Scene {
         const next = WALL_DAMAGE_CHAIN[t.index];
         if (next !== undefined) this.setTile(t.x, t.y, next);
         this.playerBullets.kill(bullet as Phaser.Physics.Arcade.Sprite);
+        this.soundManager.playHitBuilding();
       },
     );
 
@@ -408,6 +410,7 @@ export class GameScene extends Phaser.Scene {
           : obj2 as Phaser.Physics.Arcade.Sprite;
         if (!b.active || this.dead) return;
         this.pillboxBullets.kill(b);
+        this.soundManager.playHitTank();
         const killed = this.tank.takeDamage();
         if (killed) this.time.delayedCall(0, () => this.onTankKilled());
       },
@@ -533,7 +536,7 @@ export class GameScene extends Phaser.Scene {
             this.setTile(tileX, tileY, DisplayTile.Grass);
             t.trees = Math.min(40, t.trees + TREES_PER_HARVEST);
           }
-        });
+        }, () => this.soundManager.playChopTree());
         break;
 
       case 'buildRoad':
@@ -571,17 +574,17 @@ export class GameScene extends Phaser.Scene {
             'mine',
           ).setDepth(1);
           this.mines.push({ tileX, tileY, sprite });
-        });
+        }, () => this.soundManager.playLayMine());
         break;
     }
   }
 
-  private dispatchSoldier(tileX: number, tileY: number, onArrive: () => void) {
+  private dispatchSoldier(tileX: number, tileY: number, onArrive: () => void, sound?: () => void) {
     const toX = (tileX + 0.5) * TILE_SIZE;
     const toY = (tileY + 0.5) * TILE_SIZE;
     this.builder.dispatch(toX, toY, () => ({ x: this.tank.x, y: this.tank.y }), () => {
       onArrive();
-      this.soundManager.playBuildTile();
+      (sound ?? (() => this.soundManager.playBuildTile()))();
     });
   }
 
@@ -611,6 +614,7 @@ export class GameScene extends Phaser.Scene {
         const ty = Math.floor(b.y / TILE_SIZE);
         if (this.mapData.terrain[ty]?.[tx] === DisplayTile.Forest) {
           this.setTile(tx, ty, DisplayTile.Grass);
+          this.soundManager.playHitTree();
           this.playerBullets.kill(b);
           this.pillboxBullets.kill(b);
         }
@@ -628,7 +632,8 @@ export class GameScene extends Phaser.Scene {
         const { x, y } = m.sprite;
         m.sprite.destroy();
         this.mines.splice(i, 1);
-        this.spawnExplosionAt(x, y);
+        this.soundManager.playMineExplosion();
+        this.spawnExplosionAt(x, y, true);
         this.setTile(m.tileX, m.tileY, DisplayTile.Crater);
         const killed = this.tank.takeDamage(3);
         if (killed) this.time.delayedCall(0, () => this.onTankKilled());
@@ -680,10 +685,16 @@ export class GameScene extends Phaser.Scene {
     return this.mapData.terrain[ty]?.[tx] ?? 0;
   }
 
-  private spawnExplosionAt(x: number, y: number) {
+  /** dist=true skips the explosion sound (caller already played a mine explosion). */
+  private spawnExplosionAt(x: number, y: number, skipSound = false) {
     const s = this.add.sprite(x, y, 'explosion').setDepth(8);
     this.time.delayedCall(600, () => s.destroy());
-    this.soundManager.playExplosion();
+    if (!skipSound) this.soundManager.playExplosion(this.soundDist(x, y));
+  }
+
+  private soundDist(wx: number, wy: number): number {
+    const MAX_HEAR = 640;
+    return Math.min(1, Math.hypot(wx - this.tank.x, wy - this.tank.y) / MAX_HEAR);
   }
 
   // ─── Minimap ────────────────────────────────────────────────────────────────

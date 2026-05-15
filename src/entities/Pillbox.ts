@@ -91,7 +91,7 @@ export class Pillbox {
     targetY: number,
     bullets: BulletManager,
     targetHidden = false,
-    onShot?: () => void,
+    onShot?: (x: number, y: number) => void,
   ) {
     if (!this.alive || this.owner === 'friendly') return;
 
@@ -120,7 +120,7 @@ export class Pillbox {
         this.y + Math.sin(rad) * 18,
         snapped,
       );
-      onShot?.();
+      onShot?.(this.x, this.y);
     }
   }
 }
@@ -161,7 +161,7 @@ export class PillboxManager {
     targetY: number,
     bullets: BulletManager,
     targetHidden = false,
-    onShot?: () => void,
+    onShot?: (x: number, y: number) => void,
   ) {
     for (const pill of this.pills) {
       pill.update(delta, targetX, targetY, bullets, targetHidden, onShot);
