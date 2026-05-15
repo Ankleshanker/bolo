@@ -1,21 +1,15 @@
-// Raw terrain nibble values stored in .bmap file (4-bit, 0-15)
+// Raw terrain nibble values stored in .bmap file (4-bit, 0-7 used in practice)
 export const RawTerrain = {
-  DeepSea:   0,
-  ShallowSea: 1,
-  Wall:      2,
-  River:     3,
-  Swamp0:    4,
-  Swamp1:    5,
-  Swamp2:    6,
-  Swamp3:    7,
-  Crater:    8,
-  Road:      9,
-  Forest:   10,
-  Rubble0:  11,
-  Rubble1:  12,
-  Rubble2:  13,
-  Rubble3:  14,
-  Grass:    15,
+  Sea:    0,  // open/deep sea
+  River:  1,  // shallow coastal water / river
+  Swamp:  2,
+  Crater: 3,
+  Road:   4,
+  Forest: 5,
+  Rubble: 6,
+  Grass:  7,
+  // 8 = pillbox marker in terrain stream (uncommon)
+  // 9 = base marker in terrain stream (uncommon)
 } as const;
 
 // Display tile index in our spritesheet (left-to-right strip)
@@ -38,22 +32,16 @@ export const NUM_DISPLAY_TILES   = 27; // 11 base tiles + 16 road variants (indi
 
 // Raw nibble → display tile index
 export const TERRAIN_TO_DISPLAY: Readonly<Record<number, number>> = {
-  0:  DisplayTile.Sea,
-  1:  DisplayTile.Shallow,
-  2:  DisplayTile.Wall,
-  3:  DisplayTile.Shallow,   // river = shallow water visually
-  4:  DisplayTile.Swamp,
-  5:  DisplayTile.Swamp,
-  6:  DisplayTile.Swamp,
-  7:  DisplayTile.Swamp,
-  8:  DisplayTile.Crater,
-  9:  DisplayTile.Road,
-  10: DisplayTile.Forest,
-  11: DisplayTile.Rubble,
-  12: DisplayTile.Rubble,
-  13: DisplayTile.Rubble,
-  14: DisplayTile.Rubble,
-  15: DisplayTile.Grass,
+  0: DisplayTile.Sea,
+  1: DisplayTile.Shallow,  // river / coastal water
+  2: DisplayTile.Swamp,
+  3: DisplayTile.Crater,
+  4: DisplayTile.Road,
+  5: DisplayTile.Forest,
+  6: DisplayTile.Rubble,
+  7: DisplayTile.Grass,
+  8: DisplayTile.Grass,    // pillbox terrain marker → grass underneath
+  9: DisplayTile.Road,     // base terrain marker → road underneath
 };
 
 // Speed multiplier for each display tile (1.0 = normal grass speed)

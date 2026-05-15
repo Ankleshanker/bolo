@@ -63,57 +63,52 @@ export class BoloMapParser {
       new Array(MAP_SIZE).fill(DisplayTile.Sea)
     );
 
-    // Decode RLE nibble-encoded row segments
-    // Each segment: y (1 byte), startX (1 byte), endX (1 byte), then nibble stream
-    // Nibble stream decoding:
-    //   nibble < 8  → (nibble + 1) literal tile nibbles follow
-    //   nibble >= 8 → run of (nibble - 6) copies of next nibble tile type
-    // Segments end when y == 0xFF
+    // Decode RLE nibble-encoded row segments.
+    // Each segment: dataLen (1 byte, total segment size including header),
+    //               y (1 byte), startX (1 byte), endX (1 byte),
+    //               then (dataLen - 4) bytes of nibble data.
+    // Sentinel: dataLen=4, y=0xFF.
+    //
+    // Nibble RLE:
+    //   seqLen < 8  → next (seqLen + 1) nibbles are individual tile types
+    //   seqLen >= 8 → next nibble tile type repeats (seqLen - 6) times
     while (offset < bytes.length) {
-      const y = bytes[offset++];
-      if (y === 0xFF) break;
+      const dataLen = bytes[offset++];
       if (offset >= bytes.length) break;
+
+      const y      = bytes[offset++];
+      if (y === 0xFF) break;
 
       const startX = bytes[offset++];
       const endX   = bytes[offset++];
-      const count  = endX - startX; // number of tiles in this segment
+      const count  = endX - startX;
+
+      const nibbleData  = bytes.slice(offset, offset + dataLen - 4);
+      offset += dataLen - 4;
+
       if (count <= 0) continue;
 
-      // Nibble reader state
-      let nibbleByte = 0;
-      let nibbleHigh = true; // alternate high/low nibble within each byte
-
+      let nibblePos = 0;
       const readNibble = (): number => {
-        if (nibbleHigh) {
-          nibbleByte = bytes[offset++];
-          nibbleHigh = false;
-          return (nibbleByte >> 4) & 0x0F;
-        } else {
-          nibbleHigh = true;
-          return nibbleByte & 0x0F;
-        }
+        const idx = Math.floor(nibblePos);
+        const n = (nibblePos === idx)
+          ? (nibbleData[idx] >> 4) & 0x0F
+          : nibbleData[idx] & 0x0F;
+        nibblePos += 0.5;
+        return n;
       };
 
       let col = startX;
-      let remaining = count;
-
-      while (remaining > 0 && offset <= bytes.length) {
-        const n = readNibble();
-
-        if (n >= 8) {
-          // Run of identical tiles
-          const runLen = n - 6;
-          const tileType = readNibble();
-          const display = TERRAIN_TO_DISPLAY[tileType] ?? DisplayTile.Sea;
-          for (let k = 0; k < runLen && remaining > 0; k++, col++, remaining--) {
-            terrain[y][col] = display;
+      while (col < endX) {
+        const seqLen = readNibble();
+        if (seqLen < 8) {
+          for (let k = 0; k < seqLen + 1 && col < endX; k++, col++) {
+            terrain[y][col] = TERRAIN_TO_DISPLAY[readNibble()] ?? DisplayTile.Sea;
           }
         } else {
-          // Literal tiles
-          const litCount = n + 1;
-          for (let k = 0; k < litCount && remaining > 0; k++, col++, remaining--) {
-            const tileType = readNibble();
-            terrain[y][col] = TERRAIN_TO_DISPLAY[tileType] ?? DisplayTile.Sea;
+          const display = TERRAIN_TO_DISPLAY[readNibble()] ?? DisplayTile.Sea;
+          for (let k = 0; k < seqLen - 6 && col < endX; k++, col++) {
+            terrain[y][col] = display;
           }
         }
       }
