@@ -241,14 +241,6 @@ export class GameScene extends Phaser.Scene {
       this.add.text(cx, cy, '★', { fontSize: '14px', color: '#000000' })
         .setDepth(3).setOrigin(0.5);
     }
-    for (const start of this.mapData.starts) {
-      this.add.triangle(
-        start.x * TILE_SIZE + TILE_SIZE / 2,
-        start.y * TILE_SIZE + TILE_SIZE / 2,
-        0, 10, 10, -10, -10, -10,
-        0x00ff00,
-      ).setDepth(2);
-    }
   }
 
   private setTile(tileX: number, tileY: number, displayTile: number) {
@@ -310,7 +302,7 @@ export class GameScene extends Phaser.Scene {
   // ─── Tank ───────────────────────────────────────────────────────────────────
 
   private spawnTank() {
-    const start = this.mapData.starts[0];
+    const start = this.mapData.starts[Math.floor(Math.random() * this.mapData.starts.length)];
     const stx = start ? start.x : Math.floor(MAP_SIZE / 2);
     const sty = start ? start.y : Math.floor(MAP_SIZE / 2);
     const sx  = (stx + 0.5) * TILE_SIZE;
@@ -362,7 +354,7 @@ export class GameScene extends Phaser.Scene {
     this.respawnTimer -= delta;
     if (this.respawnTimer > 0) return;
 
-    const start = this.mapData.starts[0];
+    const start = this.mapData.starts[Math.floor(Math.random() * this.mapData.starts.length)];
     const stx = start ? start.x : Math.floor(MAP_SIZE / 2);
     const sty = start ? start.y : Math.floor(MAP_SIZE / 2);
     const sx  = (stx + 0.5) * TILE_SIZE;
