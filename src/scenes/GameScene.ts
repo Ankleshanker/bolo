@@ -139,7 +139,6 @@ export class GameScene extends Phaser.Scene {
 
     if (this.dead) {
       this.handleRespawn(delta);
-      this.soundManager.setEngineSpeed(0);
       this.updateMinimap();
       this.updateHUD();
       return;
@@ -151,7 +150,6 @@ export class GameScene extends Phaser.Scene {
       this.startSinking();
     }
 
-    let spd = 0;
     if (!this._sinking) {
       const state        = this.keys.getState();
       const terrainSpeed = TERRAIN_SPEED[tileVal] ?? 1.0;
@@ -165,10 +163,7 @@ export class GameScene extends Phaser.Scene {
       } else {
         this.tank.tickCooldown(delta);
       }
-      spd = Math.hypot(this.tank.body.velocity.x, this.tank.body.velocity.y);
     }
-    this.soundManager.setEngineSpeed(spd);
-
     const inForest = tileVal === DisplayTile.Forest;
     this.tank.sprite.setAlpha(inForest ? 0.65 : 1);
 
@@ -497,7 +492,6 @@ export class GameScene extends Phaser.Scene {
 
   private triggerGameOver() {
     this.gameOver = true;
-    this.soundManager.setEngineSpeed(0);
     const score  = this.countScore();
     const vw     = this.scale.width - PANEL_WIDTH;
     const vh     = this.scale.height;

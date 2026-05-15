@@ -5,8 +5,6 @@
 export class SoundManager {
   private ctx: AudioContext;
   private master: GainNode;
-  private engineOsc: OscillatorNode;
-  private engineGain: GainNode;
   private readonly enabled: boolean;
 
   constructor() {
@@ -15,38 +13,16 @@ export class SoundManager {
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.35;
       this.master.connect(this.ctx.destination);
-
-      // Continuous engine oscillator — gain is modulated by tank speed
-      this.engineOsc  = this.ctx.createOscillator();
-      this.engineGain = this.ctx.createGain();
-      this.engineOsc.type = 'sawtooth';
-      this.engineOsc.frequency.value = 60;
-      this.engineGain.gain.value = 0;
-      this.engineOsc.connect(this.engineGain);
-      this.engineGain.connect(this.master);
-      this.engineOsc.start();
       this.enabled = true;
     } catch {
-      // Audio unavailable (unlikely in modern browsers)
       this.enabled = false;
-      this.ctx      = null!;
-      this.master   = null!;
-      this.engineOsc  = null!;
-      this.engineGain = null!;
+      this.ctx     = null!;
+      this.master  = null!;
     }
   }
 
   resume() {
     if (this.enabled && this.ctx.state === 'suspended') this.ctx.resume();
-  }
-
-  /** Call every frame with current tank speed (px/s). Max normal speed ≈ 160. */
-  setEngineSpeed(speed: number) {
-    if (!this.enabled) return;
-    const t    = Math.min(speed / 160, 1);
-    const now  = this.ctx.currentTime;
-    this.engineOsc.frequency.setTargetAtTime(60 + t * 80, now, 0.1);
-    this.engineGain.gain.setTargetAtTime(0.008 + t * 0.022, now, 0.08);
   }
 
   playGunshot() {
@@ -63,10 +39,8 @@ export class SoundManager {
     if (!this.enabled) return;
     const now = this.ctx.currentTime;
 
-    // White-noise burst through a low-pass filter
     this._noise(0.55, 700, 0.2, 0.65, 'lowpass');
 
-    // Deep sine "thump" that pitch-bends downward
     const osc  = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'sine';
