@@ -31,6 +31,12 @@ interface MineMarker {
   sprite: Phaser.GameObjects.Sprite;
 }
 
+interface BoatMarker {
+  tileX: number;
+  tileY: number;
+  sprite: Phaser.GameObjects.Sprite;
+}
+
 export class GameScene extends Phaser.Scene {
   private mapData!: MapData;
   private groundLayer!: Phaser.Tilemaps.TilemapLayer;
@@ -43,6 +49,9 @@ export class GameScene extends Phaser.Scene {
   private actionPanel!: ActionPanel;
   private settingsPanel!: SettingsPanel;
   private mines: MineMarker[] = [];
+  private boats: BoatMarker[] = [];
+  private inBoat     = false;
+  private activeBoat: BoatMarker | null = null;
   private pillPickups: Phaser.GameObjects.Sprite[] = [];
 
   // Cameras
@@ -93,6 +102,9 @@ export class GameScene extends Phaser.Scene {
     this.gameTimer    = GAME_DURATION_MS;
     this.gameOver     = false;
     this.gameOverObjs = [];
+    this.boats        = [];
+    this.inBoat       = false;
+    this.activeBoat   = null;
   }
 
   create() {
@@ -146,13 +158,16 @@ export class GameScene extends Phaser.Scene {
 
     const tileVal = this.getTileUnderTank();
 
-    if (!this._sinking && tileVal === DisplayTile.Sea) {
+    this.checkBoatInteraction();
+
+    if (!this._sinking && !this.inBoat && tileVal === DisplayTile.Sea) {
       this.startSinking();
     }
 
     if (!this._sinking) {
-      const state        = this.keys.getState();
-      const terrainSpeed = TERRAIN_SPEED[tileVal] ?? 1.0;
+      const state = this.keys.getState();
+      const onWater = tileVal === DisplayTile.Sea || tileVal === DisplayTile.Shallow;
+      const terrainSpeed = (this.inBoat && onWater) ? 1.0 : (TERRAIN_SPEED[tileVal] ?? 1.0);
       this.tank.updateTank(delta, state, terrainSpeed);
       if (state.fire) {
         const shot = this.tank.tryFire(delta);
@@ -296,18 +311,26 @@ export class GameScene extends Phaser.Scene {
 
   private spawnTank() {
     const start = this.mapData.starts[0];
-    const sx = start ? (start.x + 0.5) * TILE_SIZE : MAP_SIZE / 2 * TILE_SIZE;
-    const sy = start ? (start.y + 0.5) * TILE_SIZE : MAP_SIZE / 2 * TILE_SIZE;
+    const stx = start ? start.x : Math.floor(MAP_SIZE / 2);
+    const sty = start ? start.y : Math.floor(MAP_SIZE / 2);
+    const sx  = (stx + 0.5) * TILE_SIZE;
+    const sy  = (sty + 0.5) * TILE_SIZE;
     this.tank = new Tank(this, sx, sy);
     const storedColor = parseInt(localStorage.getItem(STORAGE_COLOR) ?? '0xffffff', 16);
     this.tank.sprite.setTint(storedColor);
     this.dead = false;
     this.respawnTimer = 0;
+    const spawnTile = this.mapData.terrain[sty]?.[stx] ?? DisplayTile.Sea;
+    if (spawnTile === DisplayTile.Sea || spawnTile === DisplayTile.Shallow) {
+      this.ensureBoatAtTile(stx, sty);
+    }
   }
 
   private onTankKilled() {
     this.dead = true;
     this.respawnTimer = 3000;
+    this.inBoat     = false;
+    this.activeBoat = null;
     this.builder.cancel();
     const { x, y } = this.tank;
     this.time.delayedCall(0, () => this.spawnExplosionAt(x, y));
@@ -340,8 +363,14 @@ export class GameScene extends Phaser.Scene {
     if (this.respawnTimer > 0) return;
 
     const start = this.mapData.starts[0];
-    const sx = start ? (start.x + 0.5) * TILE_SIZE : MAP_SIZE / 2 * TILE_SIZE;
-    const sy = start ? (start.y + 0.5) * TILE_SIZE : MAP_SIZE / 2 * TILE_SIZE;
+    const stx = start ? start.x : Math.floor(MAP_SIZE / 2);
+    const sty = start ? start.y : Math.floor(MAP_SIZE / 2);
+    const sx  = (stx + 0.5) * TILE_SIZE;
+    const sy  = (sty + 0.5) * TILE_SIZE;
+    const respawnTile = this.mapData.terrain[sty]?.[stx] ?? DisplayTile.Sea;
+    if (respawnTile === DisplayTile.Sea || respawnTile === DisplayTile.Shallow) {
+      this.ensureBoatAtTile(stx, sty);
+    }
     this.tank.sprite.setPosition(sx, sy).setVisible(true).setScale(1).setAlpha(1);
     this.tank.body.enable = true;
     this.tank.body.setVelocity(0, 0);
@@ -548,9 +577,13 @@ export class GameScene extends Phaser.Scene {
 
       case 'buildWall':
         if (t.trees < COST_WALL) return;
-        if (tile === DisplayTile.Sea || tile === DisplayTile.Forest) return;
+        if (tile === DisplayTile.Forest) return;
         t.trees -= COST_WALL;
-        this.dispatchSoldier(tileX, tileY, () => this.setTile(tileX, tileY, DisplayTile.Wall));
+        if (tile === DisplayTile.Sea || tile === DisplayTile.Shallow) {
+          this.dispatchSoldier(tileX, tileY, () => this.ensureBoatAtTile(tileX, tileY));
+        } else {
+          this.dispatchSoldier(tileX, tileY, () => this.setTile(tileX, tileY, DisplayTile.Wall));
+        }
         break;
 
       case 'buildPillbox':
@@ -617,6 +650,45 @@ export class GameScene extends Phaser.Scene {
           this.soundManager.playHitTree();
           this.playerBullets.kill(b);
           this.pillboxBullets.kill(b);
+        }
+      }
+    }
+  }
+
+  private ensureBoatAtTile(tileX: number, tileY: number) {
+    if (this.boats.some(b => b.tileX === tileX && b.tileY === tileY)) return;
+    const sprite = this.add.sprite(
+      (tileX + 0.5) * TILE_SIZE,
+      (tileY + 0.5) * TILE_SIZE,
+      'boat',
+    ).setDepth(1);
+    this.boats.push({ tileX, tileY, sprite });
+  }
+
+  private checkBoatInteraction() {
+    if (this.dead) return;
+    const tx = this.tank.tileX;
+    const ty = this.tank.tileY;
+    const tileVal = this.mapData.terrain[ty]?.[tx] ?? DisplayTile.Sea;
+    const onWater = tileVal === DisplayTile.Sea || tileVal === DisplayTile.Shallow;
+
+    if (this.inBoat && this.activeBoat) {
+      if (onWater) {
+        // Move boat with tank pixel-for-pixel
+        this.activeBoat.tileX = tx;
+        this.activeBoat.tileY = ty;
+        this.activeBoat.sprite.setPosition(this.tank.x, this.tank.y);
+      } else {
+        // Exited water — drop boat at last water tile (sprite stays where it is)
+        this.inBoat     = false;
+        this.activeBoat = null;
+      }
+    } else if (!this.inBoat) {
+      for (const boat of this.boats) {
+        if (boat.tileX === tx && boat.tileY === ty) {
+          this.inBoat     = true;
+          this.activeBoat = boat;
+          break;
         }
       }
     }

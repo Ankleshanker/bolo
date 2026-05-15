@@ -444,6 +444,35 @@ export class BootScene extends Phaser.Scene {
     sol.generateTexture('soldier', 16, 16);
     sol.destroy();
 
+    // Boat — 32×32 top-down view; sits on water tiles
+    const boat = this.make.graphics({ x: 0, y: 0 });
+    // Outer hull rim
+    boat.fillStyle(0x083030);
+    boat.fillEllipse(16, 16, 30, 30);
+    // Hull body
+    boat.fillStyle(0x0e4e4e);
+    boat.fillEllipse(16, 16, 26, 26);
+    // Wooden deck planks
+    boat.fillStyle(0x7a5020);
+    boat.fillRect(8, 11, 16, 2);
+    boat.fillRect(8, 15, 16, 2);
+    boat.fillRect(8, 19, 16, 2);
+    boat.fillRect(8, 23, 16, 2);
+    // Plank highlight edges
+    boat.fillStyle(0x9a6830, 0.6);
+    boat.fillRect(8, 11, 16, 1);
+    boat.fillRect(8, 15, 16, 1);
+    boat.fillRect(8, 19, 16, 1);
+    boat.fillRect(8, 23, 16, 1);
+    // 4 directional arrows (light teal)
+    boat.fillStyle(0x88dddd);
+    boat.fillTriangle(16, 2,  12, 9,  20, 9);   // North
+    boat.fillTriangle(16, 30, 12, 23, 20, 23);  // South
+    boat.fillTriangle(30, 16, 23, 12, 23, 20);  // East
+    boat.fillTriangle(2,  16, 9,  12, 9,  20);  // West
+    boat.generateTexture('boat', TILE_SIZE, TILE_SIZE);
+    boat.destroy();
+
     // Mine — dark circle with prongs (16×16)
     const mine = this.make.graphics({ x: 0, y: 0 });
     mine.fillStyle(0x222222);
