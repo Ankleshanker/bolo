@@ -497,6 +497,7 @@ export class GameScene extends Phaser.Scene {
 
   private triggerGameOver() {
     this.gameOver = true;
+    this.soundManager.setEngineSpeed(0);
     const score  = this.countScore();
     const vw     = this.scale.width - PANEL_WIDTH;
     const vh     = this.scale.height;
