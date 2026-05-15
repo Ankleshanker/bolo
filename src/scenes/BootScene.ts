@@ -591,10 +591,10 @@ export class BootScene extends Phaser.Scene {
     cracks.generateTexture('pill_cracks', TILE_SIZE, TILE_SIZE);
     cracks.destroy();
 
-    // Try to load the test map; GameScene handles load failure gracefully
-    this.load.binary('mapdata', '/maps/test.bmap');
+    // Try to load the bundled map; GameScene handles load failure gracefully
+    this.load.binary('mapdata', `${import.meta.env.BASE_URL}maps/everard-island.bmap`);
     this.load.on('loaderror', (_file: Phaser.Loader.File) => {
-      console.warn('test.bmap not found — will use procedural map');
+      console.warn('everard-island.bmap not found — will use procedural map');
     });
   }
 

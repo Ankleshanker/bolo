@@ -90,7 +90,7 @@ export class LobbyScene extends Phaser.Scene {
       .on('pointerout',  () => { if (this.hasMap && !this.useProcedural) this.fileCard.setFillStyle(0x0d1f33); });
 
     this.add.text(fx, cardY - 38, 'MAP FILE', { fontSize: '12px', color: fileTxt }).setOrigin(0.5);
-    this.add.text(fx, cardY - 18, 'test.bmap', { fontSize: '10px', color: '#445566' }).setOrigin(0.5);
+    this.add.text(fx, cardY - 18, 'Everard Island', { fontSize: '10px', color: '#445566' }).setOrigin(0.5);
     this.add.text(fx, cardY + 8,
       this.hasMap ? 'Classic layout' : 'No .bmap loaded',
       { fontSize: '11px', color: this.hasMap ? '#778899' : '#442222' }).setOrigin(0.5);
