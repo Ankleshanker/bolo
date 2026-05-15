@@ -10,12 +10,12 @@ export let CURRENT_SEED = 0;
 // swamp rings low inland areas, forests cluster at mid-high elevation,
 // mountains occupy only the highest peaks (~10-15% of land).
 const T_SEA      = 0.30; // below → Sea
-const T_SHALLOW  = 0.37; // Sea–Shallow boundary
-const T_SWAMP    = 0.44; // Shallow–Swamp boundary
-const T_GRASS    = 0.52; // Swamp–Grass boundary
-const T_FOREST   = 0.72; // Grass–Forest boundary
-const T_RUBBLE   = 0.83; // Forest–Rubble (rocky approach to mountains)
-const T_MOUNTAIN = 0.90; // Rubble–Mountain boundary
+const T_SHALLOW  = 0.36; // Sea–Shallow boundary
+const T_SWAMP    = 0.42; // Shallow–Swamp boundary  (narrow ~6pt band → ~10% of land)
+const T_GRASS    = 0.74; // Swamp–Grass boundary    (wide  ~32pt band → ~50% of land)
+const T_FOREST   = 0.86; // Grass–Forest boundary   (~12pt band → ~25% of land)
+const T_RUBBLE   = 0.91; // Forest–Rubble (rocky approach to mountains)
+const T_MOUNTAIN = 0.94; // Rubble–Mountain boundary (~3pt band → ~10% of land)
 
 // Roughness range: randomised per map between 0.45 and 0.65
 const ROUGHNESS_MIN = 0.45;
@@ -85,17 +85,27 @@ function applyHeightmap(
     }
   }
 
-  // Scatter craters on otherwise featureless grass — adds terrain character
-  const craterCount = rngInt(8, 18);
-  for (let i = 0; i < craterCount; i++) {
-    const cx = rngInt(PLAY_MIN + 2, PLAY_MAX - 2);
-    const cy = rngInt(PLAY_MIN + 2, PLAY_MAX - 2);
+  // Scatter craters on grass — target ~5% of grass tiles by random cluster placement
+  const grassTiles: Array<[number, number]> = [];
+  for (let ty2 = PLAY_MIN; ty2 <= PLAY_MAX; ty2++) {
+    for (let tx2 = PLAY_MIN; tx2 <= PLAY_MAX; tx2++) {
+      if (terrain[ty2][tx2] === DisplayTile.Grass) grassTiles.push([tx2, ty2]);
+    }
+  }
+  const craterTarget = Math.floor(grassTiles.length * 0.05);
+  let cratersFilled = 0;
+  let craterAttempts = 0;
+  while (cratersFilled < craterTarget && craterAttempts < craterTarget * 10) {
+    craterAttempts++;
+    const idx = Math.floor(rng() * grassTiles.length);
+    const [cx, cy] = grassTiles[idx];
     if (terrain[cy][cx] !== DisplayTile.Grass) continue;
     const r = rngInt(1, 3);
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (dx * dx + dy * dy <= r * r && terrain[cy + dy]?.[cx + dx] === DisplayTile.Grass) {
           set(terrain, cx + dx, cy + dy, DisplayTile.Crater);
+          cratersFilled++;
         }
       }
     }
