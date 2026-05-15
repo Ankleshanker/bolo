@@ -226,7 +226,7 @@ export class GameScene extends Phaser.Scene {
       const cx = base.x * TILE_SIZE + TILE_SIZE / 2;
       const cy = base.y * TILE_SIZE + TILE_SIZE / 2;
       const neutral = base.owner === 0xFF;
-      const rect = this.add.rectangle(cx, cy, 24, 24, neutral ? 0xffaa00 : 0x44ff44).setDepth(2);
+      const rect = this.add.rectangle(cx, cy, 24, 24, neutral ? 0xffaa00 : this.teamColor()).setDepth(2);
       this.baseRects.push(rect);
       this.add.text(cx, cy, 'B', { fontSize: '11px', color: '#000000' })
         .setDepth(3).setOrigin(0.5);
@@ -657,7 +657,7 @@ export class GameScene extends Phaser.Scene {
       if (base.owner === 0xFF) {
         // Neutral → captured
         base.owner = 0x00;
-        this.baseRects[i]?.setFillStyle(0x44ff44);
+        this.baseRects[i]?.setFillStyle(this.teamColor());
         this.soundManager.playBuildTile();
       } else if (base.owner === 0x00) {
         // Friendly → resupply
@@ -672,6 +672,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
+
+  private teamColor(): number {
+    const stored = localStorage.getItem(STORAGE_COLOR);
+    return stored ? parseInt(stored, 16) : 0x44ff44;
+  }
 
   private getTileUnderTank(): number {
     const tx = this.tank.tileX;
