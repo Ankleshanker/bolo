@@ -2,121 +2,282 @@ import Phaser from 'phaser';
 import { TILE_SIZE, NUM_DISPLAY_TILES, TILESET_KEY, ROAD_VARIANT_BASE } from '../map/TileTypes';
 
 // Visual definition for each display tile
-const TILE_DEFS: { fill: number; border: number; detail?: () => void }[] = [
-  { fill: 0x007888, border: 0x007888 },   // 0  Sea          teal base (wave dots by detail)
-  { fill: 0x009999, border: 0x009999 },   // 1  Shallow Sea  solid teal
-  { fill: 0x050a05, border: 0x050a05 },   // 2  Swamp        near-black (dots by detail)
-  { fill: 0x5a3520, border: 0x3a2010 },   // 3  Crater       dark brown
-  { fill: 0xa08050, border: 0x7a5f38 },   // 4  Road         sandy tan
-  { fill: 0x0a1a0a, border: 0x0a1a0a },   // 5  Forest       dark forest floor
-  { fill: 0x7a6a50, border: 0x5a4e38 },   // 6  Rubble       grey-brown
-  { fill: 0x2a4a18, border: 0x2a4a18 },   // 7  Grass        medium-dark olive-green base
-  { fill: 0x4a4a4a, border: 0x2a2a2a },   // 8  Wall         dark grey
-  { fill: 0x6a6a6a, border: 0x4a4a4a },   // 9  Damaged Wall lighter grey
-  { fill: 0x5a5040, border: 0x3a3028 },   // 10 Mountain     dark rocky grey-brown
+const TILE_DEFS: { fill: number; border: number }[] = [
+  { fill: 0x005f6e, border: 0x005f6e },   // 0  Sea
+  { fill: 0x1a9999, border: 0x1a9999 },   // 1  Shallow Sea
+  { fill: 0x081208, border: 0x081208 },   // 2  Swamp
+  { fill: 0x4a2c16, border: 0x2e1a08 },   // 3  Crater
+  { fill: 0x8c7244, border: 0x6a5430 },   // 4  Road
+  { fill: 0x081508, border: 0x081508 },   // 5  Forest
+  { fill: 0x6e5f48, border: 0x504535 },   // 6  Rubble
+  { fill: 0x2a4818, border: 0x2a4818 },   // 7  Grass
+  { fill: 0x3e3e3e, border: 0x222222 },   // 8  Wall
+  { fill: 0x606060, border: 0x404040 },   // 9  Damaged Wall
+  { fill: 0x4e4538, border: 0x322c24 },   // 10 Mountain
 ];
 
 function drawTileDetails(gfx: Phaser.GameObjects.Graphics, index: number, x: number) {
-  const T = TILE_SIZE;
+  const T  = TILE_SIZE; // 32
   const ox = x;
 
   switch (index) {
-    case 0: { // Sea — dark blue dot-waves on teal base (full period = 16 px → tiles seamlessly)
-      gfx.fillStyle(0x000099);
-      for (let wy = 3; wy < T; wy += 8) {
-        for (let wx = 0; wx < T; wx += 5) {
-          const yo  = Math.round(Math.sin(wx * Math.PI / 8) * 2);
-          const dotY = wy + yo;
-          if (dotY >= 0 && dotY + 2 <= T) gfx.fillRect(ox + wx, dotY, 2, 2);
+    case 0: { // Sea — layered wave bands
+      // Lighter band at mid-depth
+      gfx.fillStyle(0x007a8e, 0.5);
+      gfx.fillRect(ox, 6, T, 4);
+      gfx.fillRect(ox, 20, T, 4);
+      // Dark wave shapes (sinusoidal dots)
+      gfx.fillStyle(0x003a50);
+      for (let wy = 2; wy < T; wy += 9) {
+        for (let wx = 0; wx < T; wx += 4) {
+          const yo = Math.round(Math.sin((wx + wy * 2) * Math.PI / 10) * 2);
+          const dy = wy + yo;
+          if (dy >= 0 && dy + 2 <= T) gfx.fillRect(ox + wx, dy, 3, 1);
         }
+      }
+      // Specular glint
+      gfx.fillStyle(0x44ccdd, 0.4);
+      gfx.fillRect(ox + 4,  5, 6, 1);
+      gfx.fillRect(ox + 18, 13, 5, 1);
+      gfx.fillRect(ox + 9,  22, 7, 1);
+      break;
+    }
+
+    case 1: { // Shallow Sea — sandy bottom visible through light water
+      gfx.fillStyle(0x2ab8b8, 0.3);
+      gfx.fillRect(ox, 0, T, T);
+      // Sand patches
+      gfx.fillStyle(0xd4b870, 0.35);
+      gfx.fillCircle(ox + 8,  10, 5);
+      gfx.fillCircle(ox + 22, 8,  4);
+      gfx.fillCircle(ox + 14, 22, 6);
+      gfx.fillCircle(ox + 4,  24, 3);
+      gfx.fillCircle(ox + 26, 24, 4);
+      // Ripple lines
+      gfx.lineStyle(1, 0x50cccc, 0.4);
+      gfx.lineBetween(ox + 2, 6,  ox + 12, 6);
+      gfx.lineBetween(ox + 16, 16, ox + 28, 16);
+      gfx.lineBetween(ox + 6, 26,  ox + 20, 26);
+      break;
+    }
+
+    case 2: { // Swamp — murky water with organic patches
+      // Murky water sheen
+      gfx.fillStyle(0x1a3a1a, 0.5);
+      gfx.fillCircle(ox + 10, 12, 7);
+      gfx.fillCircle(ox + 22, 20, 6);
+      // Lily pad shapes
+      gfx.fillStyle(0x2a6a18, 0.85);
+      gfx.fillCircle(ox + 8,  8,  4);
+      gfx.fillCircle(ox + 22, 6,  3);
+      gfx.fillCircle(ox + 16, 22, 4);
+      gfx.fillCircle(ox + 5,  24, 3);
+      gfx.fillCircle(ox + 26, 25, 3);
+      // Lily pad notch (cut)
+      gfx.fillStyle(0x081208);
+      gfx.fillRect(ox + 7,  8, 2, 4);
+      gfx.fillRect(ox + 15, 21, 2, 4);
+      // Bubble dots
+      gfx.fillStyle(0x44aa44, 0.6);
+      for (const [bx, by] of [[3,4],[11,2],[20,5],[27,3],[0,15],[29,17],[13,29]]) {
+        gfx.fillRect(ox + bx, by, 2, 2);
       }
       break;
     }
 
-    case 2: { // Swamp — scattered green and teal 2×2 dots on near-black
-      const swampDots: [number, number, number][] = [
-        [3, 4, 0x00bb00], [11, 2, 0x00bbaa], [20, 5, 0x00bb00], [27, 3, 0x00aabb],
-        [8, 11, 0x00bbaa], [16, 13, 0x00bb00], [25, 10, 0x00bb44], [0, 14, 0x00bbaa],
-        [4, 20, 0x00bb00], [13, 21, 0x00bbaa], [22, 18, 0x00bb00], [30, 20, 0x00aabb],
-        [7, 28, 0x00bbaa], [17, 26, 0x00bb00], [25, 29, 0x00bb44],
+    case 3: { // Crater — impact depression with debris ring
+      // Outer scorched ring
+      gfx.fillStyle(0x2a1808, 0.7);
+      gfx.fillCircle(ox + 16, 16, 13);
+      // Mid tone ring
+      gfx.fillStyle(0x3c2410, 0.6);
+      gfx.fillCircle(ox + 16, 16, 9);
+      // Inner void
+      gfx.fillStyle(0x160a04);
+      gfx.fillCircle(ox + 16, 16, 5);
+      // Impact lines radiating out
+      gfx.lineStyle(1, 0x1e1008, 0.9);
+      const angles = [0, 45, 90, 135, 180, 225, 270, 315];
+      for (const a of angles) {
+        const rad = a * Math.PI / 180;
+        const x1 = ox + 16 + Math.cos(rad) * 5;
+        const y1 = 16 + Math.sin(rad) * 5;
+        const x2 = ox + 16 + Math.cos(rad) * 13;
+        const y2 = 16 + Math.sin(rad) * 13;
+        gfx.lineBetween(x1, y1, x2, y2);
+      }
+      // Rim highlight (NW lighting)
+      gfx.fillStyle(0x6a4830, 0.7);
+      gfx.fillRect(ox + 9, 8, 6, 2);
+      gfx.fillRect(ox + 7, 10, 2, 4);
+      break;
+    }
+
+    case 5: { // Forest — dense canopy viewed from above
+      // Floor texture — dappled shadow
+      gfx.fillStyle(0x0c1e0c, 0.5);
+      gfx.fillRect(ox + 2, 2, 4, 4);
+      gfx.fillRect(ox + 18, 6, 3, 3);
+      gfx.fillRect(ox + 12, 24, 5, 4);
+      gfx.fillRect(ox + 26, 22, 4, 4);
+      gfx.fillRect(ox + 0, 18, 4, 3);
+
+      // 5 tree canopies, 3 shades of green (outer → inner → highlight)
+      const canopies: [number, number, number][] = [
+        [8, 9, 8], [23, 8, 7], [15, 19, 8], [5, 25, 7], [26, 23, 7],
       ];
-      for (const [dx, dy, col] of swampDots) {
-        gfx.fillStyle(col);
+      for (const [tx, ty, r] of canopies) {
+        gfx.fillStyle(0x1a5e1a);
+        gfx.fillCircle(ox + tx, ty, r);
+        gfx.fillStyle(0x2e8a2e);
+        gfx.fillCircle(ox + tx - 1, ty - 1, Math.max(2, r - 2));
+        gfx.fillStyle(0x44aa44);
+        gfx.fillCircle(ox + tx - 2, ty - 2, Math.max(1, r - 4));
+        // Highlight specular
+        gfx.fillStyle(0x66cc66, 0.5);
+        gfx.fillRect(ox + tx - 3, ty - 3, 2, 2);
+      }
+      break;
+    }
+
+    case 6: { // Rubble — broken masonry chunks
+      // Large chunks
+      gfx.fillStyle(0x5a5040);
+      gfx.fillRect(ox + 3,  4,  7, 5);
+      gfx.fillRect(ox + 18, 3,  6, 7);
+      gfx.fillRect(ox + 8,  18, 8, 5);
+      gfx.fillRect(ox + 22, 20, 6, 6);
+      gfx.fillRect(ox + 2,  24, 5, 5);
+      // Highlight edges (NW)
+      gfx.fillStyle(0x8a7860, 0.8);
+      gfx.fillRect(ox + 3,  4, 7, 1);
+      gfx.fillRect(ox + 3,  4, 1, 5);
+      gfx.fillRect(ox + 18, 3, 6, 1);
+      gfx.fillRect(ox + 8,  18, 8, 1);
+      // Shadow edges (SE)
+      gfx.fillStyle(0x2a2418);
+      gfx.fillRect(ox + 9,  8,  1, 1);
+      gfx.fillRect(ox + 23, 9,  1, 1);
+      gfx.fillRect(ox + 15, 22, 1, 1);
+      // Small debris
+      gfx.fillStyle(0x7a6a52, 0.6);
+      for (const [dx, dy] of [[13,7],[6,14],[24,15],[11,27],[28,10],[1,10]]) {
         gfx.fillRect(ox + dx, dy, 2, 2);
       }
       break;
     }
 
-    case 3: // Crater — concentric rings
-      gfx.lineStyle(1, 0x3a2010, 0.8);
-      gfx.strokeCircle(ox + 16, 16, 10);
-      gfx.strokeCircle(ox + 16, 16, 5);
-      gfx.fillStyle(0x2a1808, 0.6);
-      gfx.fillCircle(ox + 16, 16, 3);
-      break;
-
-    case 5: { // Forest — tree canopies viewed from above
-      const canopies: [number, number, number][] = [
-        [8, 8, 7], [24, 7, 6], [16, 18, 7], [5, 25, 6], [25, 24, 6],
+    case 7: { // Grass — varied blade marks with subtle height variation
+      // Slightly lighter patch
+      gfx.fillStyle(0x304e1a, 0.4);
+      gfx.fillCircle(ox + 10, 22, 7);
+      gfx.fillCircle(ox + 24, 10, 6);
+      // Blade marks — short vertical 1×2 or 1×3 lines in 3 greens
+      const marks: [number, number, number, number, number][] = [
+        [3,  2,  1, 3, 0x4e9430],
+        [10, 4,  1, 2, 0x3a7222],
+        [18, 1,  1, 3, 0x4e9430],
+        [26, 4,  1, 2, 0x3a7222],
+        [6,  10, 1, 3, 0x3a7222],
+        [14, 9,  1, 2, 0x5aa838],
+        [22, 11, 1, 3, 0x3a7222],
+        [30, 9,  1, 2, 0x4e9430],
+        [2,  18, 1, 3, 0x5aa838],
+        [11, 17, 1, 2, 0x3a7222],
+        [20, 19, 1, 3, 0x4e9430],
+        [28, 17, 1, 2, 0x3a7222],
+        [7,  26, 1, 3, 0x4e9430],
+        [16, 25, 1, 2, 0x5aa838],
+        [24, 27, 1, 3, 0x3a7222],
+        [1,  28, 1, 2, 0x4e9430],
+        [29, 28, 1, 3, 0x5aa838],
       ];
-      for (const [tx, ty, r] of canopies) {
-        gfx.fillStyle(0x1a6a1a);
-        gfx.fillCircle(ox + tx, ty, r);
-        gfx.fillStyle(0x2a8a2a);
-        gfx.fillCircle(ox + tx - 1, ty - 1, Math.max(1, r - 2));
-        gfx.fillStyle(0x3aaa3a);
-        gfx.fillCircle(ox + tx - 2, ty - 2, Math.max(1, r - 4));
-      }
-      break;
-    }
-
-    case 6: // Rubble — random debris squares
-      gfx.fillStyle(0x4a4040, 0.7);
-      for (const [dx, dy] of [[4, 6], [14, 4], [22, 10], [8, 18], [20, 22], [12, 26]]) {
-        gfx.fillRect(ox + dx, dy, 3, 3);
-      }
-      break;
-
-    case 7: { // Grass — subtle darker and lighter marks on olive base
-      const grassMarks: [number, number, number][] = [
-        [2, 2, 0x4a8a2a], [10, 3, 0x3a6a1e], [18, 1, 0x4a8a2a], [26, 3, 0x3a6a1e],
-        [6, 9, 0x3a6a1e], [14, 8, 0x4a8a2a], [22, 10, 0x3a6a1e], [30, 8, 0x4a8a2a],
-        [4, 17, 0x4a8a2a], [12, 16, 0x3a6a1e], [20, 18, 0x4a8a2a], [28, 16, 0x3a6a1e],
-        [8, 25, 0x3a6a1e], [16, 24, 0x4a8a2a], [24, 26, 0x3a6a1e], [0, 25, 0x4a8a2a],
-      ];
-      for (const [gx, gy, col] of grassMarks) {
+      for (const [gx, gy, w, h, col] of marks) {
         gfx.fillStyle(col);
-        gfx.fillRect(ox + gx, gy, 2, 2);
+        gfx.fillRect(ox + gx, gy, w, h);
       }
       break;
     }
 
-    case 8: // Wall — brick pattern
-      gfx.lineStyle(1, 0x2a2a2a, 0.8);
+    case 8: { // Wall — mortared brick with NW lighting
+      // Mortar joints
+      gfx.lineStyle(1, 0x1a1a1a);
       for (let wy = 0; wy < T; wy += 8) {
         gfx.lineBetween(ox, wy, ox + T, wy);
-        const offset = (wy / 8 % 2) === 0 ? 0 : 16;
-        gfx.lineBetween(ox + offset, wy, ox + offset, wy + 8);
+        const offset = ((wy / 8) % 2) === 0 ? 0 : 16;
+        gfx.lineBetween(ox + offset,      wy, ox + offset,      wy + 8);
         gfx.lineBetween(ox + offset + 16, wy, ox + offset + 16, wy + 8);
       }
+      // NW highlight on top and left of each brick
+      gfx.fillStyle(0x5a5a5a, 0.5);
+      for (let row = 0; row < 4; row++) {
+        const wy     = row * 8;
+        const offset = (row % 2) === 0 ? 0 : 16;
+        for (let col = 0; col < 2; col++) {
+          const bx = ox + offset + col * 16;
+          gfx.fillRect(bx + 1, wy + 1, 14, 1); // top highlight
+          gfx.fillRect(bx + 1, wy + 1, 1, 6);  // left highlight
+        }
+      }
+      // SE shadow
+      gfx.fillStyle(0x1e1e1e, 0.5);
+      for (let row = 0; row < 4; row++) {
+        const wy     = row * 8;
+        const offset = (row % 2) === 0 ? 0 : 16;
+        for (let col = 0; col < 2; col++) {
+          const bx = ox + offset + col * 16;
+          gfx.fillRect(bx + 1, wy + 6, 14, 1); // bottom shadow
+        }
+      }
       break;
+    }
 
-    case 10: { // Mountain — top-down rocky peak with NW lighting
-      // NW-lit upper rock faces (lighter)
-      gfx.fillStyle(0x8a7a68);
-      gfx.fillRect(ox + 5,  8, 8, 6);
-      gfx.fillRect(ox + 5, 14, 5, 4);
-      gfx.fillRect(ox + 13, 4, 6, 5);
-      gfx.fillRect(ox + 20, 8, 7, 5);
-      // SE shadow faces (very dark)
-      gfx.fillStyle(0x2a1e18);
-      gfx.fillRect(ox + 6,  18,  5, 5);
-      gfx.fillRect(ox + 14, 15,  8, 6);
-      gfx.fillRect(ox + 10, 22, 10, 5);
-      // Peak highlight
-      gfx.fillStyle(0xb8a890);
-      gfx.fillRect(ox + 14, 5, 4, 4);
-      gfx.fillRect(ox + 7, 12, 3, 3);
+    case 9: { // Damaged Wall — same bricks, cracked
+      // Faint mortar
+      gfx.lineStyle(1, 0x3a3a3a, 0.5);
+      for (let wy = 0; wy < T; wy += 8) {
+        gfx.lineBetween(ox, wy, ox + T, wy);
+        const offset = ((wy / 8) % 2) === 0 ? 0 : 16;
+        gfx.lineBetween(ox + offset,      wy, ox + offset,      wy + 8);
+        gfx.lineBetween(ox + offset + 16, wy, ox + offset + 16, wy + 8);
+      }
+      // Crack lines
+      gfx.lineStyle(1, 0x2a2a2a, 0.9);
+      gfx.lineBetween(ox + 5,  2, ox + 8,  12);
+      gfx.lineBetween(ox + 8,  12, ox + 6,  18);
+      gfx.lineBetween(ox + 20, 8, ox + 18, 20);
+      gfx.lineBetween(ox + 18, 20, ox + 22, 28);
+      gfx.lineBetween(ox + 12, 18, ox + 14, 28);
+      break;
+    }
+
+    case 10: { // Mountain — multi-level rocky peak, NW top-down lighting
+      // Base rock — mid tier
+      gfx.fillStyle(0x6e6050);
+      gfx.fillRect(ox + 4,  12, 10, 8);
+      gfx.fillRect(ox + 12, 8,  8,  12);
+      gfx.fillRect(ox + 18, 14, 8,  8);
+      gfx.fillRect(ox + 6,  20, 14, 6);
+      // Upper tier
+      gfx.fillStyle(0x8a7862);
+      gfx.fillRect(ox + 8,  8,  6,  6);
+      gfx.fillRect(ox + 13, 4,  8,  8);
+      gfx.fillRect(ox + 20, 8,  6,  6);
+      // Peak highlights (NW light)
+      gfx.fillStyle(0xb0a080);
+      gfx.fillRect(ox + 13, 4, 5, 2);
+      gfx.fillRect(ox + 13, 4, 2, 6);
+      gfx.fillRect(ox + 8,  8, 4, 1);
+      // SE shadow faces
+      gfx.fillStyle(0x1e1610);
+      gfx.fillRect(ox + 18, 10, 2, 6);
+      gfx.fillRect(ox + 14, 20, 10, 3);
+      gfx.fillRect(ox + 6,  24, 14, 3);
+      // Scree / rock chips at base
+      gfx.fillStyle(0x5a5040, 0.7);
+      for (const [dx, dy] of [[3,22],[22,24],[26,18],[2,16],[28,10]]) {
+        gfx.fillRect(ox + dx, dy, 2, 2);
+      }
       break;
     }
   }
@@ -139,12 +300,15 @@ function drawRoadVariant(gfx: Phaser.GameObjects.Graphics, ox: number, mask: num
   const hasS = (mask & 4) !== 0;
   const hasW = (mask & 8) !== 0;
 
-  // Full asphalt base — adjacent tiles share edges seamlessly
-  gfx.fillStyle(0x1c1c1c);
+  // Full asphalt base
+  gfx.fillStyle(0x242424);
   gfx.fillRect(ox, 0, T, T);
+  // Subtle asphalt grain
+  gfx.fillStyle(0x1c1c1c, 0.6);
+  for (let gy = 2; gy < T; gy += 6) gfx.fillRect(ox + 2, gy, T - 4, 1);
 
   // Grass shoulders only on sides with no road neighbour
-  gfx.fillStyle(0x4a8a2a);
+  gfx.fillStyle(0x3e7a22);
   if (!hasN) gfx.fillRect(ox,          0,      T,  SH);
   if (!hasS) gfx.fillRect(ox,          T - SH, T,  SH);
   if (!hasE) gfx.fillRect(ox + T - SH, 0,      SH, T);
@@ -211,37 +375,55 @@ export class BootScene extends Phaser.Scene {
     gfx.generateTexture(TILESET_KEY, stripWidth, TILE_SIZE);
     gfx.destroy();
 
-    // Tank sprite — drawn facing NORTH (up) so angle=0 → tank points up in-game.
-    // Treads run vertically (top-to-bottom), barrel points up.
+    // Tank sprite — facing NORTH (angle=0 → barrel points up)
     const tank = this.make.graphics({ x: 0, y: 0 });
 
-    // Left tread
-    tank.fillStyle(0x383838);
-    tank.fillRect(3, 4, 7, 24);
-    // Right tread
-    tank.fillRect(22, 4, 7, 24);
-    // Tread detail lines
-    tank.lineStyle(1, 0x1a1a1a, 0.8);
-    for (let ty = 6; ty < 28; ty += 4) {
-      tank.lineBetween(3, ty, 10, ty);
-      tank.lineBetween(22, ty, 29, ty);
-    }
+    // Left tread body
+    tank.fillStyle(0x2e2e2e);
+    tank.fillRect(2, 3, 8, 26);
+    // Left tread segments
+    tank.fillStyle(0x484848);
+    for (let ty = 4; ty < 28; ty += 4) tank.fillRect(2, ty, 8, 2);
+    // Left tread highlight edge
+    tank.fillStyle(0x555555);
+    tank.fillRect(2, 3, 1, 26);
+
+    // Right tread body
+    tank.fillStyle(0x2e2e2e);
+    tank.fillRect(22, 3, 8, 26);
+    tank.fillStyle(0x484848);
+    for (let ty = 4; ty < 28; ty += 4) tank.fillRect(22, ty, 8, 2);
+    tank.fillStyle(0x555555);
+    tank.fillRect(29, 3, 1, 26);
 
     // Hull body
-    tank.fillStyle(0x606060);
-    tank.fillRect(10, 6, 12, 20);
+    tank.fillStyle(0x686868);
+    tank.fillRect(10, 5, 12, 22);
+    // Hull NW highlight
+    tank.fillStyle(0x888888);
+    tank.fillRect(10, 5, 12, 1);
+    tank.fillRect(10, 5, 1, 22);
+    // Hull SE shadow
+    tank.fillStyle(0x3a3a3a);
+    tank.fillRect(10, 26, 12, 1);
+    tank.fillRect(21, 5, 1, 22);
 
-    // Turret
-    tank.fillStyle(0x4a4a4a);
-    tank.fillRect(11, 9, 10, 10);
+    // Turret base plate
+    tank.fillStyle(0x505050);
+    tank.fillRect(11, 10, 10, 10);
 
-    // Barrel — points UP (north)
-    tank.fillStyle(0x2e2e2e);
-    tank.fillRect(14, 2, 4, 12);
+    // Turret top
+    tank.fillStyle(0x5e5e5e);
+    tank.fillRect(12, 11, 8, 8);
+    tank.fillStyle(0x787878);
+    tank.fillRect(12, 11, 8, 1);
+    tank.fillRect(12, 11, 1, 8);
 
-    // Highlight
-    tank.fillStyle(0x909090, 0.5);
-    tank.fillRect(11, 9, 4, 4);
+    // Barrel — thick at base, narrow at tip
+    tank.fillStyle(0x282828);
+    tank.fillRect(14, 1, 4, 11);
+    tank.fillStyle(0x383838);
+    tank.fillRect(15, 1, 2, 11);
 
     tank.generateTexture('tank', TILE_SIZE, TILE_SIZE);
     tank.destroy();
@@ -417,6 +599,6 @@ export class BootScene extends Phaser.Scene {
   }
 
   create() {
-    this.scene.start('GameScene');
+    this.scene.start('LobbyScene');
   }
 }

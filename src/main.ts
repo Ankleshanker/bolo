@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
+import { LobbyScene } from './scenes/LobbyScene';
 import { GameScene } from './scenes/GameScene';
 
 new Phaser.Game({
   type: Phaser.AUTO,
   backgroundColor: '#000000',
-  scene: [BootScene, GameScene],
+  scene: [BootScene, LobbyScene, GameScene],
   pixelArt: true,
   physics: {
     default: 'arcade',

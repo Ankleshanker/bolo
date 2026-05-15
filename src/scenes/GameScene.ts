@@ -17,6 +17,8 @@ import type { MapData } from '../map/MapData';
 
 const WALL_DAMAGE_CHAIN: Record<number, number> = { 8: 9, 9: 6, 6: 3 };
 
+const GAME_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+
 // Builder costs (trees)
 const COST_ROAD    = 2;
 const COST_WALL    = 4;
@@ -74,8 +76,23 @@ export class GameScene extends Phaser.Scene {
   private lastBaseTileX = -1;
   private lastBaseTileY = -1;
 
+  // Win condition
+  private gameTimer     = GAME_DURATION_MS;
+  private gameOver      = false;
+  private timerText!:    Phaser.GameObjects.Text;
+  private scoreText!:    Phaser.GameObjects.Text;
+  private gameOverObjs:  Phaser.GameObjects.GameObject[] = [];
+  private initData:      { useProcedural?: boolean; seed?: number } = {};
+
   constructor() {
     super({ key: 'GameScene' });
+  }
+
+  init(data: { useProcedural?: boolean; seed?: number }) {
+    this.initData     = data ?? {};
+    this.gameTimer    = GAME_DURATION_MS;
+    this.gameOver     = false;
+    this.gameOverObjs = [];
   }
 
   create() {
@@ -110,9 +127,16 @@ export class GameScene extends Phaser.Scene {
     this.input.once('pointerdown', resume);
     this.input.keyboard!.once('keydown', resume);
     this.setupWorldClick();
+    this.buildTimerHUD();
   }
 
   update(_time: number, delta: number) {
+    if (this.gameOver) return;
+    if (!this.gameOver) {
+      this.gameTimer -= delta;
+      if (this.gameTimer <= 0) { this.triggerGameOver(); return; }
+    }
+
     if (this.dead) {
       this.handleRespawn(delta);
       this.soundManager.setEngineSpeed(0);
@@ -166,6 +190,9 @@ export class GameScene extends Phaser.Scene {
   // ─── Map ────────────────────────────────────────────────────────────────────
 
   private loadMapData(): MapData {
+    if (this.initData.useProcedural === true) {
+      return generateTestMap(this.initData.seed);
+    }
     const raw = this.cache.binary.get('mapdata') as ArrayBuffer | null;
     if (raw) {
       try {
@@ -176,7 +203,7 @@ export class GameScene extends Phaser.Scene {
         console.error('Failed to parse .bmap:', e);
       }
     }
-    return generateTestMap();
+    return generateTestMap(this.initData.seed);
   }
 
   private buildTilemap() {
@@ -441,6 +468,60 @@ export class GameScene extends Phaser.Scene {
 
       this.tryBuilderAction(tileX, tileY);
     });
+  }
+
+  private buildTimerHUD() {
+    const style = { fontSize: '14px', color: '#ffffff', backgroundColor: '#00000099', padding: { x: 6, y: 4 } };
+    this.timerText = this.add.text(0, 8, '', style).setScrollFactor(0).setDepth(30);
+    this.scoreText = this.add.text(0, 32, '', style).setScrollFactor(0).setDepth(30);
+    this.repositionTimerHUD();
+    this.scale.on('resize', () => this.repositionTimerHUD());
+    // uiCam must not render these (created after setupUiCamera, so we add here)
+    this.uiCam.ignore([this.timerText, this.scoreText]);
+  }
+
+  private repositionTimerHUD() {
+    const vw = this.scale.width - PANEL_WIDTH;
+    this.timerText.setX(vw - 140);
+    this.scoreText.setX(vw - 140);
+  }
+
+  private countScore(): { friendly: number; total: number } {
+    const friendlyPills = this.pillboxes.pills.filter(p => p.owner === 'friendly').length;
+    const friendlyBases = this.mapData.bases.filter(b => b.owner === 0x00).length;
+    return {
+      friendly: friendlyPills + friendlyBases,
+      total: this.mapData.pills.length + this.mapData.bases.length,
+    };
+  }
+
+  private triggerGameOver() {
+    this.gameOver = true;
+    const score  = this.countScore();
+    const vw     = this.scale.width - PANEL_WIDTH;
+    const vh     = this.scale.height;
+    const cx     = vw / 2;
+    const cy     = vh / 2;
+    const D      = 60;
+
+    const push = (obj: Phaser.GameObjects.GameObject) => { this.gameOverObjs.push(obj); return obj; };
+
+    push(this.add.rectangle(cx, cy, vw, vh, 0x000000, 0.78).setScrollFactor(0).setDepth(D).setInteractive());
+    push(this.add.text(cx, cy - 80, "TIME'S UP", { fontSize: '40px', color: '#ffdd44', fontStyle: 'bold' })
+      .setScrollFactor(0).setDepth(D + 1).setOrigin(0.5));
+    push(this.add.text(cx, cy - 20, `Final Score: ${score.friendly} / ${score.total} objectives`, { fontSize: '20px', color: '#ffffff' })
+      .setScrollFactor(0).setDepth(D + 1).setOrigin(0.5));
+    push(this.add.text(cx, cy + 20, `(${Math.round(score.friendly / score.total * 100)}% map control)`, { fontSize: '14px', color: '#aaaaaa' })
+      .setScrollFactor(0).setDepth(D + 1).setOrigin(0.5));
+
+    const playAgain = push(this.add.rectangle(cx, cy + 80, 180, 44, 0x1a4a1a)
+      .setStrokeStyle(2, 0x44aa44).setScrollFactor(0).setDepth(D + 1)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this.scene.start('LobbyScene'))
+      .on('pointerover', () => (playAgain as Phaser.GameObjects.Rectangle).setFillStyle(0x2a6a2a))
+      .on('pointerout',  () => (playAgain as Phaser.GameObjects.Rectangle).setFillStyle(0x1a4a1a)));
+    push(this.add.text(cx, cy + 80, 'PLAY AGAIN', { fontSize: '18px', color: '#88ff88', fontStyle: 'bold' })
+      .setScrollFactor(0).setDepth(D + 2).setOrigin(0.5));
   }
 
   private tryBuilderAction(tileX: number, tileY: number) {
@@ -759,26 +840,33 @@ export class GameScene extends Phaser.Scene {
       const secs = Math.ceil(this.respawnTimer / 1000);
       this.hudText.setText(`DESTROYED — respawning in ${secs}s`);
       this.resourceText.setText('');
-      return;
+    } else {
+      const tileVal  = this.getTileUnderTank();
+      const spd      = Math.round(Math.hypot(this.tank.body.velocity.x, this.tank.body.velocity.y));
+      const terrain  = this.TERRAIN_NAMES[tileVal] ?? '?';
+      const busy     = this.builder.isBusy ? '  [soldier out]' : '';
+      const action   = this.actionPanel.selectedAction;
+
+      const pillLabel = this.tank.pillsCarried > 0 ? '  [pill]' : '';
+      this.hudText.setText(
+        `Spd: ${spd}  Terrain: ${terrain}\nAction: ${action}${busy}${pillLabel}`,
+      );
+      this.resourceText.setText('');
+
+      // Resize bars (BF=69, matching buildHUD)
+      const BF = 69;
+      this.statBars.hp    .setSize(Math.max(0, (this.tank.health / 10)  * BF), 8);
+      this.statBars.shells.setSize(Math.max(0, (this.tank.shells / 200) * BF), 8);
+      this.statBars.mines .setSize(Math.max(0, (this.tank.mines  / 20)  * BF), 8);
+      this.statBars.trees .setSize(Math.max(0, (this.tank.trees  / 40)  * BF), 8);
     }
 
-    const tileVal  = this.getTileUnderTank();
-    const spd      = Math.round(Math.hypot(this.tank.body.velocity.x, this.tank.body.velocity.y));
-    const terrain  = this.TERRAIN_NAMES[tileVal] ?? '?';
-    const busy     = this.builder.isBusy ? '  [soldier out]' : '';
-    const action   = this.actionPanel.selectedAction;
-
-    const pillLabel = this.tank.pillsCarried > 0 ? '  [pill]' : '';
-    this.hudText.setText(
-      `Spd: ${spd}  Terrain: ${terrain}\nAction: ${action}${busy}${pillLabel}`,
-    );
-    this.resourceText.setText('');
-
-    // Resize bars (BF=69, matching buildHUD)
-    const BF = 69;
-    this.statBars.hp    .setSize(Math.max(0, (this.tank.health / 10)  * BF), 8);
-    this.statBars.shells.setSize(Math.max(0, (this.tank.shells / 200) * BF), 8);
-    this.statBars.mines .setSize(Math.max(0, (this.tank.mines  / 20)  * BF), 8);
-    this.statBars.trees .setSize(Math.max(0, (this.tank.trees  / 40)  * BF), 8);
+    // Timer + score (always updated)
+    const remaining = Math.max(0, this.gameTimer);
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    const score = this.countScore();
+    this.timerText.setText(`⏱ ${mins}:${secs.toString().padStart(2, '0')}`);
+    this.scoreText.setText(`⚑ ${score.friendly}/${score.total}`);
   }
 }
