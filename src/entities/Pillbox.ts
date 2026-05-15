@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { BulletManager } from './Bullet';
 import type { PillInfo } from '../map/MapData';
+import { STORAGE_COLOR } from '../ui/SettingsPanel';
 
 const SHOOT_RANGE_PX  = 320;
 const COOLDOWN_FULL   = 1500; // ms at full health
@@ -30,6 +31,7 @@ export class Pillbox {
       `pill_${owner}`,
     ) as Phaser.Physics.Arcade.Sprite;
 
+    if (owner === 'friendly') this.applyTeamTint();
     this.sprite.setDepth(3);
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.setImmovable(true);
@@ -65,9 +67,17 @@ export class Pillbox {
     this.health = MAX_HEALTH;
     this.alive  = true;
     this.sprite.setTexture(`pill_${newOwner}`);
+    if (newOwner === 'friendly') this.applyTeamTint();
+    else this.sprite.clearTint();
     this.sprite.setActive(true).setVisible(true);
     this.crackSprite.setAlpha(0).setVisible(true);
     (this.sprite.body as Phaser.Physics.Arcade.Body).enable = true;
+  }
+
+  private applyTeamTint() {
+    const stored = localStorage.getItem(STORAGE_COLOR);
+    const color  = stored ? parseInt(stored, 16) : 0xffffff;
+    this.sprite.setTint(color);
   }
 
   destroy() {
