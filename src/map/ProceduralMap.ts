@@ -5,17 +5,17 @@ import { diamondSquare } from './Noise';
 // ─── Public seed (readable by Settings panel) ────────────────────────────────
 export let CURRENT_SEED = 0;
 
-// ─── Elevation thresholds → terrain ──────────────────────────────────────────
-// Tuned so: coast appears naturally at the edge of the playable interior,
-// swamp rings low inland areas, forests cluster at mid-high elevation,
-// mountains occupy only the highest peaks (~10-15% of land).
-const T_SEA      = 0.30; // below → Sea
-const T_SHALLOW  = 0.36; // Sea–Shallow boundary
-const T_SWAMP    = 0.42; // Shallow–Swamp boundary  (narrow ~6pt band → ~10% of land)
-const T_GRASS    = 0.74; // Swamp–Grass boundary    (wide  ~32pt band → ~50% of land)
-const T_FOREST   = 0.86; // Grass–Forest boundary   (~12pt band → ~25% of land)
-const T_RUBBLE   = 0.91; // Forest–Rubble (rocky approach to mountains)
-const T_MOUNTAIN = 0.94; // Rubble–Mountain boundary (~3pt band → ~10% of land)
+// ─── Target terrain percentiles (fraction of playable tiles) ─────────────────
+// Rivers carved in Phase D will add more shallow/swamp on top of these baselines.
+// Using percentile-based thresholds guarantees these ratios regardless of
+// heightmap distribution shape (diamond-square is NOT uniformly distributed).
+const P_SEA      = 0.22; // cumulative: bottom 22% → Sea
+const P_SHALLOW  = 0.27; // next  5% → Shallow
+const P_SWAMP    = 0.31; // next  4% → Swamp   (narrow ring around water)
+const P_GRASS    = 0.75; // next 44% → Grass   (dominant terrain)
+const P_FOREST   = 0.94; // next 19% → Forest
+const P_RUBBLE   = 0.97; // next  3% → Rubble
+// remaining 3% → Mountain
 
 // Roughness range: randomised per map between 0.45 and 0.65
 const ROUGHNESS_MIN = 0.45;
@@ -61,25 +61,43 @@ function distance(ax: number, ay: number, bx: number, by: number): number {
 function applyHeightmap(
   terrain: number[][],
   heightmap: Float32Array,
-): void {
-  // heightmap is 257×257; sample at tile centre using bilinear interpolation
-  // tile (tx, ty) → heightmap sample at (tx, ty) — good enough at this resolution
+): { tRubble: number } {
+  // Sample all heightmap values in the playable area, then sort to find the
+  // actual height value at each target percentile.  This guarantees the desired
+  // tile ratios regardless of the heightmap's value distribution.
+  const samples: number[] = [];
   for (let ty = PLAY_MIN; ty <= PLAY_MAX; ty++) {
     for (let tx = PLAY_MIN; tx <= PLAY_MAX; tx++) {
-      // Map tile coords into heightmap coords (0-256)
+      const hx = Math.round((tx - PLAY_MIN) / (PLAY_MAX - PLAY_MIN) * 256);
+      const hy = Math.round((ty - PLAY_MIN) / (PLAY_MAX - PLAY_MIN) * 256);
+      samples.push(heightmap[hy * 257 + hx]);
+    }
+  }
+  samples.sort((a, b) => a - b);
+  const n = samples.length;
+  const tAt = (p: number) => samples[Math.min(Math.floor(p * n), n - 1)];
+
+  const T_SEA      = tAt(P_SEA);
+  const T_SHALLOW  = tAt(P_SHALLOW);
+  const T_SWAMP    = tAt(P_SWAMP);
+  const T_GRASS    = tAt(P_GRASS);
+  const T_FOREST   = tAt(P_FOREST);
+  const T_RUBBLE   = tAt(P_RUBBLE);
+
+  for (let ty = PLAY_MIN; ty <= PLAY_MAX; ty++) {
+    for (let tx = PLAY_MIN; tx <= PLAY_MAX; tx++) {
       const hx = Math.round((tx - PLAY_MIN) / (PLAY_MAX - PLAY_MIN) * 256);
       const hy = Math.round((ty - PLAY_MIN) / (PLAY_MAX - PLAY_MIN) * 256);
       const h  = heightmap[hy * 257 + hx];
 
       let tile: number;
-      if      (h < T_SEA)      tile = DisplayTile.Sea;
-      else if (h < T_SHALLOW)  tile = DisplayTile.Shallow;
-      else if (h < T_SWAMP)    tile = DisplayTile.Swamp;
-      else if (h < T_GRASS)    tile = DisplayTile.Grass;
-      else if (h < T_FOREST)   tile = DisplayTile.Forest;
-      else if (h < T_RUBBLE)   tile = DisplayTile.Rubble;
-      else if (h < T_MOUNTAIN) tile = DisplayTile.Mountain;
-      else                     tile = DisplayTile.Mountain;
+      if      (h < T_SEA)     tile = DisplayTile.Sea;
+      else if (h < T_SHALLOW) tile = DisplayTile.Shallow;
+      else if (h < T_SWAMP)   tile = DisplayTile.Swamp;
+      else if (h < T_GRASS)   tile = DisplayTile.Grass;
+      else if (h < T_FOREST)  tile = DisplayTile.Forest;
+      else if (h < T_RUBBLE)  tile = DisplayTile.Rubble;
+      else                    tile = DisplayTile.Mountain;
 
       terrain[ty][tx] = tile;
     }
@@ -110,12 +128,14 @@ function applyHeightmap(
       }
     }
   }
+
+  return { tRubble: T_RUBBLE };
 }
 
 // ─── Phase D: Rivers ─────────────────────────────────────────────────────────
 // Rivers flow from a high-elevation spring point downhill to the nearest Sea/Shallow.
 // Each river is 2 tiles wide. Banks get a 1-tile Swamp fringe.
-function generateRivers(terrain: number[][], heightmap: Float32Array): void {
+function generateRivers(terrain: number[][], heightmap: Float32Array, tRubble: number): void {
   const RIVER_COUNT    = rngInt(2, 4);
   const MIN_SPRING_SEP = 30; // minimum tile distance between spring points
 
@@ -129,7 +149,7 @@ function generateRivers(terrain: number[][], heightmap: Float32Array): void {
     const h  = heightmap[hy * 257 + hx];
 
     // Spring must be in rubble/mountain zone
-    if (h < T_RUBBLE) continue;
+    if (h < tRubble) continue;
     if (springs.some(s => distance(s.x, s.y, tx, ty) < MIN_SPRING_SEP)) continue;
     springs.push({ x: tx, y: ty });
   }
@@ -433,10 +453,10 @@ export function generateTestMap(providedSeed?: number): MapData {
   );
 
   // Phase C: terrain from heightmap (playable interior only)
-  applyHeightmap(terrain, heightmap);
+  const { tRubble } = applyHeightmap(terrain, heightmap);
 
   // Phase D: rivers and inland lake refinement
-  generateRivers(terrain, heightmap);
+  generateRivers(terrain, heightmap, tRubble);
   refineLakes(terrain);
 
   // Phase E: POI placement, road network
