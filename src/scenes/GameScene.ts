@@ -228,7 +228,7 @@ export class GameScene extends Phaser.Scene {
       const neutral = base.owner === 0xFF;
       const rect = this.add.rectangle(cx, cy, 24, 24, neutral ? 0xffaa00 : this.teamColor()).setDepth(2);
       this.baseRects.push(rect);
-      this.add.text(cx, cy, 'B', { fontSize: '11px', color: '#000000' })
+      this.add.text(cx, cy, '★', { fontSize: '14px', color: '#000000' })
         .setDepth(3).setOrigin(0.5);
     }
     for (const start of this.mapData.starts) {
