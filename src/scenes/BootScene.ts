@@ -5,7 +5,7 @@ import { TILE_SIZE, NUM_DISPLAY_TILES, TILESET_KEY, ROAD_VARIANT_BASE } from '..
 const TILE_DEFS: { fill: number; border: number }[] = [
   { fill: 0x005f6e, border: 0x005f6e },   // 0  Sea
   { fill: 0x1a9999, border: 0x1a9999 },   // 1  Shallow Sea
-  { fill: 0x081208, border: 0x081208 },   // 2  Swamp
+  { fill: 0x1e3a2a, border: 0x1a3224 },   // 2  Swamp
   { fill: 0x4a2c16, border: 0x2e1a08 },   // 3  Crater
   { fill: 0x8c7244, border: 0x6a5430 },   // 4  Road
   { fill: 0x081508, border: 0x081508 },   // 5  Forest
@@ -61,26 +61,40 @@ function drawTileDetails(gfx: Phaser.GameObjects.Graphics, index: number, x: num
       break;
     }
 
-    case 2: { // Swamp — murky water with organic patches
-      // Murky water sheen
-      gfx.fillStyle(0x1a3a1a, 0.5);
-      gfx.fillCircle(ox + 10, 12, 7);
-      gfx.fillCircle(ox + 22, 20, 6);
-      // Lily pad shapes
-      gfx.fillStyle(0x2a6a18, 0.85);
-      gfx.fillCircle(ox + 8,  8,  4);
-      gfx.fillCircle(ox + 22, 6,  3);
-      gfx.fillCircle(ox + 16, 22, 4);
-      gfx.fillCircle(ox + 5,  24, 3);
-      gfx.fillCircle(ox + 26, 25, 3);
-      // Lily pad notch (cut)
-      gfx.fillStyle(0x081208);
-      gfx.fillRect(ox + 7,  8, 2, 4);
-      gfx.fillRect(ox + 15, 21, 2, 4);
-      // Bubble dots
-      gfx.fillStyle(0x44aa44, 0.6);
-      for (const [bx, by] of [[3,4],[11,2],[20,5],[27,3],[0,15],[29,17],[13,29]]) {
-        gfx.fillRect(ox + bx, by, 2, 2);
+    case 2: { // Swamp — waterlogged ground, blue-green water pockets, sparse grass
+      // Muddy water patches
+      gfx.fillStyle(0x1a5a50);
+      gfx.fillRect(ox + 1,  3,  9, 5);
+      gfx.fillRect(ox + 19, 1,  9, 4);
+      gfx.fillRect(ox + 7,  19, 11, 6);
+      gfx.fillRect(ox + 22, 17, 8,  8);
+      gfx.fillRect(ox + 0,  25, 7,  6);
+      // Water surface shimmer
+      gfx.fillStyle(0x40a090, 0.55);
+      gfx.fillRect(ox + 2,  4,  6, 2);
+      gfx.fillRect(ox + 20, 2,  6, 1);
+      gfx.fillRect(ox + 8,  20, 8, 2);
+      gfx.fillRect(ox + 23, 18, 5, 1);
+      // Mud rim around water patches
+      gfx.fillStyle(0x2e2410);
+      gfx.fillRect(ox + 1,  3,  9, 1);
+      gfx.fillRect(ox + 19, 1,  9, 1);
+      gfx.fillRect(ox + 7,  25, 11, 1);
+      // Sparse waterlogged grass blades — olive/yellow-green
+      gfx.fillStyle(0x5a7820);
+      for (const [gx, gy, h] of [
+        [12, 0, 4], [17, 1, 3], [29, 4, 4], [0, 11, 3], [5, 13, 4],
+        [14, 10, 3], [22, 12, 4], [27, 9, 3], [2, 21, 3], [17, 24, 4],
+        [29, 22, 3], [11, 28, 3], [25, 27, 4],
+      ] as [number,number,number][]) {
+        gfx.fillRect(ox + gx, gy, 1, h);
+      }
+      // Lighter blade tips
+      gfx.fillStyle(0x7a9e30);
+      for (const [gx, gy] of [
+        [12, 0], [17, 1], [29, 4], [5, 13], [22, 12], [17, 24], [25, 27],
+      ] as [number,number][]) {
+        gfx.fillRect(ox + gx, gy, 1, 1);
       }
       break;
     }
