@@ -365,33 +365,42 @@ function buildRoads(
     edges.push([bestFrom, bestTo]);
   }
 
-  // Bresenham road between each MST edge — skip Mountain tiles (don't overwrite)
+  // Axis-aligned L-road between each MST edge — skip Mountain and Sea tiles
   for (const [fi, ti] of edges) {
-    bresenhamRoad(terrain, nodes[fi].x, nodes[fi].y, nodes[ti].x, nodes[ti].y);
+    lRoad(terrain, nodes[fi].x, nodes[fi].y, nodes[ti].x, nodes[ti].y);
   }
 }
 
-function bresenhamRoad(
+// Paint one tile as road (skipping Mountain and Sea)
+function paintRoad(terrain: number[][], x: number, y: number): void {
+  const t = get(terrain, x, y);
+  if (t !== DisplayTile.Mountain && t !== DisplayTile.Sea) {
+    set(terrain, x, y, DisplayTile.Road);
+  }
+}
+
+// L-shaped road: walk horizontally then vertically (or vice versa, alternated by rng)
+function lRoad(
   terrain: number[][],
   x0: number, y0: number,
   x1: number, y1: number,
 ): void {
-  let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-  let dy = Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-  let err = (dx > dy ? dx : -dy) / 2;
+  const hFirst = rng() < 0.5; // randomise which axis goes first
 
-  let cx = x0;
-  let cy = y0;
-  for (;;) {
-    const t = get(terrain, cx, cy);
-    // Don't overwrite Mountain or Sea — road ends at the water's edge
-    if (t !== DisplayTile.Mountain && t !== DisplayTile.Sea) {
-      set(terrain, cx, cy, DisplayTile.Road);
-    }
-    if (cx === x1 && cy === y1) break;
-    const e2 = err;
-    if (e2 > -dx) { err -= dy; cx += sx; }
-    if (e2 <  dy) { err += dx; cy += sy; }
+  if (hFirst) {
+    // Horizontal segment
+    const stepX = x0 < x1 ? 1 : -1;
+    for (let x = x0; x !== x1; x += stepX) paintRoad(terrain, x, y0);
+    // Vertical segment
+    const stepY = y0 < y1 ? 1 : -1;
+    for (let y = y0; y !== y1 + stepY; y += stepY) paintRoad(terrain, x1, y);
+  } else {
+    // Vertical segment
+    const stepY = y0 < y1 ? 1 : -1;
+    for (let y = y0; y !== y1; y += stepY) paintRoad(terrain, x0, y);
+    // Horizontal segment
+    const stepX = x0 < x1 ? 1 : -1;
+    for (let x = x0; x !== x1 + stepX; x += stepX) paintRoad(terrain, x, y1);
   }
 }
 
