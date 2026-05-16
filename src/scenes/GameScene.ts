@@ -13,13 +13,14 @@ import { InputHandler } from '../input/InputHandler';
 import { ActionPanel, PANEL_WIDTH } from '../ui/ActionPanel';
 import { SettingsPanel, STORAGE_COLOR } from '../ui/SettingsPanel';
 import { SoundManager } from '../audio/SoundManager';
+import { networkManager } from '../network/NetworkManager';
+import { GhostTankManager } from '../network/GhostTankManager';
+import type { S2C_GameStart, S2C_GameOver, S2C_StateSnapshot } from '../network/types.ts';
 import type { MapData } from '../map/MapData';
 
 const WALL_DAMAGE_CHAIN: Record<number, number> = { 8: 9, 9: 6, 6: 3 };
+const GAME_DURATION_MS = 5 * 60 * 1000;
 
-const GAME_DURATION_MS = 5 * 60 * 1000; // 5 minutes
-
-// Builder costs (trees)
 const COST_ROAD    = 2;
 const COST_WALL    = 4;
 const COST_PILLBOX = 10;
@@ -37,6 +38,13 @@ interface BoatMarker {
   sprite: Phaser.GameObjects.Sprite;
 }
 
+interface GameSceneInitData {
+  useProcedural?: boolean;
+  seed?: number;
+  multiplayerMode?: boolean;
+  gameStart?: S2C_GameStart;
+}
+
 export class GameScene extends Phaser.Scene {
   private mapData!: MapData;
   private groundLayer!: Phaser.Tilemaps.TilemapLayer;
@@ -50,7 +58,7 @@ export class GameScene extends Phaser.Scene {
   private settingsPanel!: SettingsPanel;
   private mines: MineMarker[] = [];
   private boats: BoatMarker[] = [];
-  private inBoat     = false;
+  private inBoat      = false;
   private activeBoat: BoatMarker | null = null;
   private pillPickups: Phaser.GameObjects.Sprite[] = [];
 
@@ -75,7 +83,7 @@ export class GameScene extends Phaser.Scene {
     trees:  Phaser.GameObjects.Rectangle;
   };
 
-  // Base markers (index-aligned with mapData.bases)
+  // Base markers
   private baseRects: Phaser.GameObjects.Rectangle[] = [];
 
   // State
@@ -85,39 +93,56 @@ export class GameScene extends Phaser.Scene {
   private lastBaseTileX = -1;
   private lastBaseTileY = -1;
 
-  // Win condition
-  private gameTimer     = GAME_DURATION_MS;
-  private gameOver      = false;
-  private timerText!:    Phaser.GameObjects.Text;
-  private scoreText!:    Phaser.GameObjects.Text;
-  private gameOverObjs:  Phaser.GameObjects.GameObject[] = [];
-  private initData:      { useProcedural?: boolean; seed?: number } = {};
+  // Timer / game over
+  private gameTimer    = GAME_DURATION_MS;
+  private gameOver     = false;
+  private timerText!:   Phaser.GameObjects.Text;
+  private scoreText!:   Phaser.GameObjects.Text;
+  private gameOverObjs: Phaser.GameObjects.GameObject[] = [];
+  private initData: GameSceneInitData = {};
+
+  // ── Multiplayer ───────────────────────────────────────────────────────────
+  private multiplayerMode = false;
+  private ghostManager: GhostTankManager | null = null;
+  private remoteBullets: BulletManager | null = null;
+  private mpSendAccum   = 0;     // ms accumulator for 20 Hz send throttle
+  private spectatorMode = false;
+  private spectatorTargetIdx = 0;
+  private mpGameStart: S2C_GameStart | null = null;
+  private killFeedObjs: Phaser.GameObjects.Text[] = [];
+  // Store net handlers as arrow fns so we can remove them on shutdown
+  private _netHandlers: Array<{ event: string; fn: (d: unknown) => void }> = [];
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
-  init(data: { useProcedural?: boolean; seed?: number }) {
-    this.initData     = data ?? {};
-    this.gameTimer    = GAME_DURATION_MS;
-    this.gameOver     = false;
-    this.gameOverObjs = [];
-    this.boats        = [];
-    this.inBoat       = false;
-    this.activeBoat   = null;
+  init(data: GameSceneInitData) {
+    this.initData        = data ?? {};
+    this.multiplayerMode = !!(data?.multiplayerMode);
+    this.mpGameStart     = data?.gameStart ?? null;
+    this.gameTimer       = GAME_DURATION_MS;
+    this.gameOver        = false;
+    this.gameOverObjs    = [];
+    this.boats           = [];
+    this.inBoat          = false;
+    this.activeBoat      = null;
+    this.spectatorMode   = false;
+    this.spectatorTargetIdx = 0;
+    this.mpSendAccum     = 0;
+    this.killFeedObjs    = [];
+    this._netHandlers    = [];
   }
 
   create() {
-    this.mapData       = this.loadMapData();
+    this.mapData        = this.loadMapData();
     this.buildTilemap();
     this.spawnTank();
     this.playerBullets  = new BulletManager(this);
     this.pillboxBullets = new BulletManager(this);
     this.pillboxes      = new PillboxManager(this, this.mapData.pills);
     this.builder        = new Builder(
-      this,
-      this.groundLayer,
-      this.pillboxes.group,
+      this, this.groundLayer, this.pillboxes.group,
       (wx, wy) => {
         const tx   = Math.floor(wx / TILE_SIZE);
         const ty   = Math.floor(wy / TILE_SIZE);
@@ -125,6 +150,12 @@ export class GameScene extends Phaser.Scene {
         return TERRAIN_SPEED[tile] ?? 1.0;
       },
     );
+
+    if (this.multiplayerMode) {
+      this.ghostManager  = new GhostTankManager(this);
+      this.remoteBullets = new BulletManager(this);
+    }
+
     this.setupCollision();
     this.setupCamera();
     this.keys          = new InputHandler(this);
@@ -133,20 +164,32 @@ export class GameScene extends Phaser.Scene {
     this.buildHUD();
     this.setupUiCamera();
     this.buildMinimap();
-    this.soundManager = new SoundManager();
-    // AudioContext requires a user gesture; resume on the first interaction
+    this.soundManager  = new SoundManager();
+
     const resume = () => this.soundManager.resume();
     this.input.once('pointerdown', resume);
     this.input.keyboard!.once('keydown', resume);
+
     this.setupWorldClick();
     this.buildTimerHUD();
+
+    if (this.multiplayerMode) {
+      this.setupMultiplayer();
+    }
   }
 
   update(_time: number, delta: number) {
     if (this.gameOver) return;
-    if (!this.gameOver) {
+
+    // Timer (SP only — MP timer driven by server timeUpdate events)
+    if (!this.multiplayerMode) {
       this.gameTimer -= delta;
       if (this.gameTimer <= 0) { this.triggerGameOver(); return; }
+    }
+
+    // Spectator camera (MP only)
+    if (this.multiplayerMode && this.dead && this.spectatorMode) {
+      this._updateSpectator();
     }
 
     if (this.dead) {
@@ -157,7 +200,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     const tileVal = this.getTileUnderTank();
-
     this.checkBoatInteraction();
 
     if (!this._sinking && !this.inBoat && tileVal === DisplayTile.Sea) {
@@ -174,20 +216,26 @@ export class GameScene extends Phaser.Scene {
         if (shot) {
           this.playerBullets.fire(shot.x, shot.y, shot.angle);
           this.soundManager.playGunshot();
+          if (this.multiplayerMode) {
+            networkManager.sendBulletFired(shot.x, shot.y, shot.angle);
+          }
         }
       } else {
         this.tank.tickCooldown(delta);
       }
     }
+
     const inForest = tileVal === DisplayTile.Forest;
     this.tank.sprite.setAlpha(inForest ? 0.65 : 1);
 
     this.playerBullets.update(delta);
     this.pillboxBullets.update(delta);
+    this.remoteBullets?.update(delta);
     this.clearForestUnderBullets();
     this.pillboxes.update(delta, this.tank.x, this.tank.y, this.pillboxBullets, inForest,
       (px, py) => this.soundManager.playPillboxFire(this.soundDist(px, py)));
     this.builder.update(delta);
+    this.ghostManager?.update();
 
     this.checkPillPickup();
     this.checkMines();
@@ -195,19 +243,303 @@ export class GameScene extends Phaser.Scene {
     this.settingsPanel.update(delta);
     this.updateMinimap();
     this.updateHUD();
+
+    // 20 Hz tank state send
+    if (this.multiplayerMode) {
+      this.mpSendAccum += delta;
+      if (this.mpSendAccum >= 50) {
+        this.mpSendAccum = 0;
+        networkManager.sendTankState({
+          x:        this.tank.x,
+          y:        this.tank.y,
+          angle:    this.tank.angle,
+          alive:    this.tank.alive,
+          inForest: inForest,
+          inBoat:   this.inBoat,
+          health:   this.tank.health,
+          shells:   this.tank.shells,
+          mines:    this.tank.mines,
+          trees:    this.tank.trees,
+        });
+      }
+    }
   }
 
-  // ─── Map ────────────────────────────────────────────────────────────────────
+  shutdown() {
+    // Remove all registered network handlers
+    for (const { event, fn } of this._netHandlers) {
+      networkManager.off(event as Parameters<typeof networkManager.off>[0], fn as never);
+    }
+    this._netHandlers = [];
+    this.ghostManager?.clear();
+  }
+
+  // ─── Multiplayer setup ───────────────────────────────────────────────────
+
+  private _addNetHandler<K extends Parameters<typeof networkManager.on>[0]>(
+    event: K,
+    fn: Parameters<typeof networkManager.on<K>>[1],
+  ): void {
+    networkManager.on(event, fn);
+    this._netHandlers.push({ event, fn: fn as (d: unknown) => void });
+  }
+
+  private setupMultiplayer(): void {
+    const net = networkManager;
+
+    // ── Apply initial players as ghosts ─────────────────────────────────────
+    for (const [id, p] of net.players) {
+      if (id === net.playerId) continue;
+      this.ghostManager!.addGhost(id, p.name, p.color, p.teamIndex);
+    }
+
+    // ── Player events ────────────────────────────────────────────────────────
+    this._addNetHandler('playerJoined', (d) => {
+      if (d.player.playerId !== net.playerId) {
+        this.ghostManager!.addGhost(d.player.playerId, d.player.name, d.player.color, d.player.teamIndex);
+      }
+    });
+
+    this._addNetHandler('playerGhosted', (d) => {
+      this.ghostManager!.setGhosted(d.playerId, true);
+    });
+
+    this._addNetHandler('playerReconnected', (d) => {
+      this.ghostManager!.setGhosted(d.playerId, false);
+    });
+
+    this._addNetHandler('playerRemoved', (d) => {
+      this.ghostManager!.removeGhost(d.playerId);
+    });
+
+    // ── Tank positions ────────────────────────────────────────────────────────
+    this._addNetHandler('tankState', (state) => {
+      if (state.playerId !== net.playerId) {
+        this.ghostManager!.updateSnapshot(state);
+      }
+    });
+
+    // ── World state ───────────────────────────────────────────────────────────
+    this._addNetHandler('stateSnapshot', (d) => {
+      this.applySnapshot(d);
+    });
+
+    this._addNetHandler('tileChanged', (d) => {
+      this.setTile(d.tileX, d.tileY, d.displayTile, false);
+    });
+
+    this._addNetHandler('pillboxUpdate', (d) => {
+      const pill = this.pillboxes.pills[d.index];
+      if (!pill) return;
+      if (!d.alive) {
+        if (pill.alive) pill.takeDamage(pill.health); // kill it
+      } else {
+        const owner = d.ownerId === null ? 'neutral'
+          : net.isMyTeam(d.ownerId) ? 'friendly' : 'enemy';
+        if (pill.owner !== owner || !pill.alive) pill.capture(owner);
+        // Sync health (server is authoritative)
+        pill.health = d.health;
+      }
+    });
+
+    this._addNetHandler('baseUpdate', (d) => {
+      const base = this.mapData.bases[d.index];
+      if (!base) return;
+      if (d.ownerId === null) {
+        base.owner = 0xFF; // neutral
+        this.baseRects[d.index]?.setFillStyle(0xffaa00);
+      } else if (net.isMyTeam(d.ownerId)) {
+        base.owner = 0x00; // friendly
+        this.baseRects[d.index]?.setFillStyle(this.teamColor());
+      } else {
+        base.owner = 0x01; // enemy
+        this.baseRects[d.index]?.setFillStyle(0xff4444);
+      }
+    });
+
+    this._addNetHandler('mineAdded', (d) => {
+      if (this.mines.some(m => m.tileX === d.tileX && m.tileY === d.tileY)) return;
+      const sprite = this.add.sprite(
+        (d.tileX + 0.5) * TILE_SIZE, (d.tileY + 0.5) * TILE_SIZE, 'mine',
+      ).setDepth(1);
+      this.mines.push({ tileX: d.tileX, tileY: d.tileY, sprite });
+    });
+
+    this._addNetHandler('mineDetonated', (d) => {
+      const i = this.mines.findIndex(m => m.tileX === d.tileX && m.tileY === d.tileY);
+      if (i >= 0) { this.mines[i].sprite.destroy(); this.mines.splice(i, 1); }
+      this.setTile(d.tileX, d.tileY, DisplayTile.Crater, false);
+      this.soundManager.playMineExplosion();
+      const cx = (d.tileX + 0.5) * TILE_SIZE;
+      const cy = (d.tileY + 0.5) * TILE_SIZE;
+      this.spawnExplosionAt(cx, cy, true);
+      // If we triggered it (our own mine detonated remotely), damage already applied locally
+    });
+
+    this._addNetHandler('boatAdded', (d) => {
+      this.ensureBoatAtTile(d.tileX, d.tileY);
+    });
+
+    // ── Combat ────────────────────────────────────────────────────────────────
+    this._addNetHandler('bulletFired', (d) => {
+      if (d.shooterId === net.playerId) return; // we already spawned our own bullet
+      const b = this.remoteBullets!.group.get(d.x, d.y, 'bullet') as Phaser.Physics.Arcade.Sprite | null;
+      if (!b) return;
+      b.setActive(true).setVisible(true).setDepth(6);
+      (b.body as Phaser.Physics.Arcade.Body).enable = true;
+      const rad = Phaser.Math.DegToRad(d.angleDeg - 90);
+      b.setVelocity(Math.cos(rad) * 480, Math.sin(rad) * 480);
+      b.setData('life', 1800);
+      b.setData('shooterId', d.shooterId);
+    });
+
+    this._addNetHandler('bulletHit', (d) => {
+      if (d.targetId !== net.playerId) return; // not us
+      if (this.dead) return;
+      this.soundManager.playHitTank();
+      const killed = this.tank.takeDamage();
+      if (killed) {
+        const shooterId = d.shooterId;
+        this.time.delayedCall(0, () => {
+          this.onTankKilled();
+          // Victim self-reports death with killer attribution
+          net.sendPlayerKillSelf(shooterId);
+        });
+      }
+    });
+
+    this._addNetHandler('playerKill', (d) => {
+      this._showKillFeed(`${d.killerName} ✕ ${d.victimName}`);
+    });
+
+    // ── Timer ──────────────────────────────────────────────────────────────────
+    this._addNetHandler('timeUpdate', (d) => {
+      this.gameTimer = d.remaining;
+    });
+
+    // ── Game over ─────────────────────────────────────────────────────────────
+    this._addNetHandler('gameOver', (d) => {
+      this.triggerGameOverMP(d);
+    });
+
+    // ── Spectator keys ─────────────────────────────────────────────────────────
+    this.input.keyboard!.on('keydown-Q', () => {
+      if (this.spectatorMode) {
+        this.spectatorTargetIdx--;
+        if (this.spectatorTargetIdx < 0) this.spectatorTargetIdx = 0;
+      }
+    });
+    this.input.keyboard!.on('keydown-E', () => {
+      if (this.spectatorMode) this.spectatorTargetIdx++;
+    });
+  }
+
+  private applySnapshot(snap: S2C_StateSnapshot): void {
+    // Apply terrain diffs
+    for (const diff of snap.terrainDiffs) {
+      this.setTile(diff.tileX, diff.tileY, diff.displayTile, false);
+    }
+    // Sync pillbox states
+    for (const ps of snap.pillboxStates) {
+      const pill = this.pillboxes.pills[ps.index];
+      if (!pill) continue;
+      const net = networkManager;
+      if (!ps.alive) {
+        if (pill.alive) pill.takeDamage(pill.health);
+      } else {
+        const owner = ps.ownerId === null ? 'neutral'
+          : net.isMyTeam(ps.ownerId) ? 'friendly' : 'enemy';
+        if (pill.owner !== owner || !pill.alive) pill.capture(owner);
+        pill.health = ps.health;
+      }
+    }
+    // Sync bases
+    for (const bs of snap.baseStates) {
+      const base = this.mapData.bases[bs.index];
+      if (!base) continue;
+      const net = networkManager;
+      if (bs.ownerId === null) {
+        base.owner = 0xFF;
+        this.baseRects[bs.index]?.setFillStyle(0xffaa00);
+      } else if (net.isMyTeam(bs.ownerId)) {
+        base.owner = 0x00;
+        this.baseRects[bs.index]?.setFillStyle(this.teamColor());
+      } else {
+        base.owner = 0x01;
+        this.baseRects[bs.index]?.setFillStyle(0xff4444);
+      }
+    }
+    // Mines
+    for (const m of snap.mines) {
+      if (this.mines.some(mm => mm.tileX === m.tileX && mm.tileY === m.tileY)) continue;
+      const sprite = this.add.sprite(
+        (m.tileX + 0.5) * TILE_SIZE, (m.tileY + 0.5) * TILE_SIZE, 'mine',
+      ).setDepth(1);
+      this.mines.push({ tileX: m.tileX, tileY: m.tileY, sprite });
+    }
+    // Boats
+    for (const b of snap.boats) {
+      this.ensureBoatAtTile(b.tileX, b.tileY);
+    }
+    // Ghost tank states
+    for (const ts of snap.tankStates) {
+      if (ts.playerId !== networkManager.playerId) {
+        this.ghostManager?.updateSnapshot(ts);
+      }
+    }
+    // Sync timer
+    this.gameTimer = this.mpGameStart!.settings.timerSeconds * 1000 - snap.timeElapsed;
+  }
+
+  private _showKillFeed(msg: string): void {
+    const vw = this.scale.width - PANEL_WIDTH;
+    const y  = this.scale.height - 60 - this.killFeedObjs.length * 18;
+    const t  = this.add.text(vw - 10, y, msg, {
+      fontSize: '11px', color: '#ffdd88',
+      backgroundColor: '#00000088',
+      padding: { x: 4, y: 2 },
+    }).setScrollFactor(0).setDepth(32).setOrigin(1, 1);
+    this.uiCam.ignore(t);
+    this.killFeedObjs.push(t);
+    this.time.delayedCall(3000, () => {
+      t.destroy();
+      const i = this.killFeedObjs.indexOf(t);
+      if (i >= 0) this.killFeedObjs.splice(i, 1);
+    });
+  }
+
+  private _updateSpectator(): void {
+    const aliveIds = this.ghostManager?.getAlivePlayerIds() ?? [];
+    if (aliveIds.length === 0) {
+      this.cameras.main.startFollow(this.tank.sprite, true, 0.12, 0.12);
+      return;
+    }
+    const idx    = ((this.spectatorTargetIdx % aliveIds.length) + aliveIds.length) % aliveIds.length;
+    const target = this.ghostManager?.getSpriteByPlayerId(aliveIds[idx]);
+    if (target) this.cameras.main.startFollow(target, true, 0.12, 0.12);
+  }
+
+  // ─── Map ──────────────────────────────────────────────────────────────────
 
   private loadMapData(): MapData {
-    if (this.initData.useProcedural === true) {
+    if (this.multiplayerMode && this.mpGameStart) {
+      const gs = this.mpGameStart;
+      if (gs.mapType === 'bmap') {
+        const raw = this.cache.binary.get('mapdata') as ArrayBuffer | null;
+        if (raw) {
+          try { return BoloMapParser.parse(raw); } catch { /* fall through */ }
+        }
+      }
+      return generateTestMap(gs.seed);
+    }
+    if (this.initData.useProcedural === true || this.initData.useProcedural === undefined) {
       return generateTestMap(this.initData.seed);
     }
     const raw = this.cache.binary.get('mapdata') as ArrayBuffer | null;
     if (raw) {
       try {
         const data = BoloMapParser.parse(raw);
-        console.log(`Loaded .bmap — pills:${data.pills.length} bases:${data.bases.length} starts:${data.starts.length}`);
+        console.log(`Loaded .bmap — pills:${data.pills.length} bases:${data.bases.length}`);
         return data;
       } catch (e) {
         console.error('Failed to parse .bmap:', e);
@@ -219,10 +551,8 @@ export class GameScene extends Phaser.Scene {
   private buildTilemap() {
     const map = this.make.tilemap({
       data: this.mapData.terrain,
-      tileWidth:  TILE_SIZE,
-      tileHeight: TILE_SIZE,
-      width:  MAP_SIZE,
-      height: MAP_SIZE,
+      tileWidth: TILE_SIZE, tileHeight: TILE_SIZE,
+      width: MAP_SIZE, height: MAP_SIZE,
     });
     const tileset = map.addTilesetImage(TILESET_KEY, TILESET_KEY, TILE_SIZE, TILE_SIZE, 0, 0)!;
     this.groundLayer = map.createLayer(0, tileset, 0, 0) as Phaser.Tilemaps.TilemapLayer;
@@ -238,12 +568,11 @@ export class GameScene extends Phaser.Scene {
       const neutral = base.owner === 0xFF;
       const rect = this.add.rectangle(cx, cy, 24, 24, neutral ? 0xffaa00 : this.teamColor()).setDepth(2);
       this.baseRects.push(rect);
-      this.add.text(cx, cy, '★', { fontSize: '14px', color: '#000000' })
-        .setDepth(3).setOrigin(0.5);
+      this.add.text(cx, cy, '★', { fontSize: '14px', color: '#000000' }).setDepth(3).setOrigin(0.5);
     }
   }
 
-  private setTile(tileX: number, tileY: number, displayTile: number) {
+  private setTile(tileX: number, tileY: number, displayTile: number, broadcast = true) {
     const wasRoad = this.mapData.terrain[tileY]?.[tileX] === DisplayTile.Road;
     if (this.mapData.terrain[tileY]) this.mapData.terrain[tileY][tileX] = displayTile;
 
@@ -252,16 +581,19 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.groundLayer.putTileAt(displayTile, tileX, tileY);
       if (wasRoad) {
-        // Reconnect neighbours that were touching the old road
         this.updateRoadTileVisual(tileX,     tileY - 1);
         this.updateRoadTileVisual(tileX + 1, tileY);
         this.updateRoadTileVisual(tileX,     tileY + 1);
         this.updateRoadTileVisual(tileX - 1, tileY);
       }
     }
+
+    if (this.multiplayerMode && broadcast) {
+      networkManager.sendTileChanged(tileX, tileY, displayTile);
+    }
   }
 
-  // ─── Road auto-tiling ───────────────────────────────────────────────────────
+  // ─── Road auto-tiling ─────────────────────────────────────────────────────
 
   private isRoad(tx: number, ty: number): boolean {
     if (tx < 0 || ty < 0 || tx >= MAP_SIZE || ty >= MAP_SIZE) return false;
@@ -299,10 +631,16 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ─── Tank ───────────────────────────────────────────────────────────────────
+  // ─── Tank ─────────────────────────────────────────────────────────────────
 
   private spawnTank() {
-    const start = this.mapData.starts[Math.floor(Math.random() * this.mapData.starts.length)];
+    // In MP, use team assignment from server for spawn point selection
+    let start = this.mapData.starts[Math.floor(Math.random() * this.mapData.starts.length)];
+    if (this.multiplayerMode && this.mpGameStart) {
+      const myTeam = networkManager.myTeamIndex;
+      const teamStarts = this.mapData.starts.filter((_, i) => i % (this.mpGameStart!.players.length || 1) === myTeam);
+      if (teamStarts.length > 0) start = teamStarts[Math.floor(Math.random() * teamStarts.length)];
+    }
     const stx = start ? start.x : Math.floor(MAP_SIZE / 2);
     const sty = start ? start.y : Math.floor(MAP_SIZE / 2);
     const sx  = (stx + 0.5) * TILE_SIZE;
@@ -328,6 +666,18 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(0, () => this.spawnExplosionAt(x, y));
     this.tank.sprite.setVisible(false);
     this.tank.body.enable = false;
+
+    // In MP: enter spectator mode while waiting to respawn
+    if (this.multiplayerMode) {
+      this.spectatorMode = true;
+      this.spectatorTargetIdx = 0;
+      // Send dead state to server
+      networkManager.sendTankState({
+        x: this.tank.x, y: this.tank.y, angle: this.tank.angle,
+        alive: false, inForest: false, inBoat: false,
+        health: 0, shells: this.tank.shells, mines: this.tank.mines, trees: this.tank.trees,
+      });
+    }
   }
 
   private startSinking() {
@@ -370,9 +720,14 @@ export class GameScene extends Phaser.Scene {
     this.tank.shells = 200;
     this.tank.alive  = true;
     this.dead = false;
+
+    if (this.multiplayerMode) {
+      this.spectatorMode = false;
+      this.cameras.main.startFollow(this.tank.sprite, true, 0.12, 0.12);
+    }
   }
 
-  // ─── Collision ──────────────────────────────────────────────────────────────
+  // ─── Collision ────────────────────────────────────────────────────────────
 
   private setupCollision() {
     this.physics.add.collider(this.tank.sprite, this.groundLayer);
@@ -406,16 +761,20 @@ export class GameScene extends Phaser.Scene {
         const p = this.pillboxes.findBySprite(pill);
         if (p && p.alive) {
           const died = p.takeDamage();
+          if (this.multiplayerMode) {
+            const idx = this.pillboxes.pills.indexOf(p);
+            networkManager.sendPillboxUpdate(idx, died ? null : networkManager.playerId, p.health, !died);
+          }
           if (died) {
             const { x, y } = p;
             this.time.delayedCall(0, () => {
               this.spawnExplosionAt(x, y);
               this.pillboxes.removePill(p);
-              const pickup = this.add.sprite(x, y, 'pill_neutral')
-                .setDepth(4)
-                .setScale(0.65)
-                .setAlpha(0.9);
-              this.pillPickups.push(pickup);
+              if (!this.multiplayerMode) {
+                const pickup = this.add.sprite(x, y, 'pill_neutral')
+                  .setDepth(4).setScale(0.65).setAlpha(0.9);
+                this.pillPickups.push(pickup);
+              }
             });
           }
         }
@@ -436,9 +795,37 @@ export class GameScene extends Phaser.Scene {
         if (killed) this.time.delayedCall(0, () => this.onTankKilled());
       },
     );
+
+    // MP-only: my bullets hit remote players
+    if (this.multiplayerMode && this.ghostManager) {
+      this.physics.add.overlap(
+        this.playerBullets.group,
+        this.ghostManager.group,
+        (obj1, obj2) => {
+          const isBullet = this.playerBullets.group.contains(obj1 as Phaser.GameObjects.GameObject);
+          const bullet   = (isBullet ? obj1 : obj2) as Phaser.Physics.Arcade.Sprite;
+          const ghost    = (isBullet ? obj2 : obj1) as Phaser.Physics.Arcade.Sprite;
+          if (!bullet.active) return;
+          const targetId = this.ghostManager!.getPlayerIdBySprite(ghost);
+          if (!targetId) return;
+          // Friendly-fire check
+          if (!networkManager.settings?.friendlyFire && networkManager.isMyTeam(targetId)) return;
+          this.playerBullets.kill(bullet);
+          this.soundManager.playHitTank();
+          networkManager.sendBulletHit(targetId, 1);
+        },
+      );
+
+      // Remote bullets stop on terrain (no tile damage)
+      this.physics.add.collider(
+        this.remoteBullets!.group,
+        this.groundLayer,
+        (bullet) => { this.remoteBullets!.kill(bullet as Phaser.Physics.Arcade.Sprite); },
+      );
+    }
   }
 
-  // ─── Camera ─────────────────────────────────────────────────────────────────
+  // ─── Camera ───────────────────────────────────────────────────────────────
 
   private setupCamera() {
     const totalW = MAP_SIZE * TILE_SIZE;
@@ -456,13 +843,11 @@ export class GameScene extends Phaser.Scene {
     this.uiCam = this.cameras.add(0, 0, PANEL_WIDTH, this.scale.height);
     this.uiCam.setScroll(0, 0);
 
-    // Main camera does not render panel UI (it would appear offset at canvas x+100)
     this.cameras.main.ignore([
       ...this.actionPanel.gameObjects,
       ...this.settingsPanel.gearObjects,
       ...this.hudPanelObjects,
     ]);
-    // uiCam does not render HUD text (depth 30 would show over buttons)
     this.uiCam.ignore([this.hudText, this.resourceText]);
 
     this.scale.on('resize', (gameSize: { width: number; height: number }) => {
@@ -472,11 +857,11 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ─── Builder / Phase 5 ──────────────────────────────────────────────────────
+  // ─── Builder / Phase 5 ────────────────────────────────────────────────────
 
   private setupWorldClick() {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.x < PANEL_WIDTH) return; // action panel area
+      if (pointer.x < PANEL_WIDTH) return;
       if (this.settingsPanel.isOpen) return;
       if (this.builder.isBusy || this.dead) return;
 
@@ -495,7 +880,6 @@ export class GameScene extends Phaser.Scene {
     this.scoreText = this.add.text(0, 32, '', style).setScrollFactor(0).setDepth(30);
     this.repositionTimerHUD();
     this.scale.on('resize', () => this.repositionTimerHUD());
-    // uiCam must not render these (created after setupUiCamera, so we add here)
     this.uiCam.ignore([this.timerText, this.scoreText]);
   }
 
@@ -516,6 +900,8 @@ export class GameScene extends Phaser.Scene {
 
   private triggerGameOver() {
     this.gameOver = true;
+    this.tank.body.setVelocity(0, 0);
+    this.tank.body.enable = false;
     const score  = this.countScore();
     const vw     = this.scale.width - PANEL_WIDTH;
     const vh     = this.scale.height;
@@ -540,6 +926,69 @@ export class GameScene extends Phaser.Scene {
       .on('pointerover', () => (playAgain as Phaser.GameObjects.Rectangle).setFillStyle(0x2a6a2a))
       .on('pointerout',  () => (playAgain as Phaser.GameObjects.Rectangle).setFillStyle(0x1a4a1a)));
     push(this.add.text(cx, cy + 80, 'PLAY AGAIN', { fontSize: '18px', color: '#88ff88', fontStyle: 'bold' })
+      .setScrollFactor(0).setDepth(D + 2).setOrigin(0.5));
+  }
+
+  private triggerGameOverMP(d: S2C_GameOver) {
+    if (this.gameOver) return;
+    this.gameOver = true;
+    if (!this.dead) {
+      this.tank.body.setVelocity(0, 0);
+      this.tank.body.enable = false;
+    }
+
+    const vw = this.scale.width - PANEL_WIDTH;
+    const vh = this.scale.height;
+    const cx = vw / 2;
+    const cy = vh / 2;
+    const D  = 60;
+    const push = (obj: Phaser.GameObjects.GameObject) => { this.gameOverObjs.push(obj); return obj; };
+
+    const REASON_LABELS: Record<string, string> = {
+      timer:      "TIME'S UP",
+      domination: 'DOMINATION',
+      deathmatch: 'DEATHMATCH OVER',
+      lastPlayer: 'LAST TANK STANDING',
+    };
+
+    push(this.add.rectangle(cx, cy, vw, vh, 0x000000, 0.80).setScrollFactor(0).setDepth(D).setInteractive());
+    push(this.add.text(cx, cy - 120, REASON_LABELS[d.reason] ?? 'GAME OVER', {
+      fontSize: '36px', color: '#ffdd44', fontStyle: 'bold',
+    }).setScrollFactor(0).setDepth(D + 1).setOrigin(0.5));
+
+    if (d.winnerName) {
+      push(this.add.text(cx, cy - 70, `Winner: ${d.winnerName}`, { fontSize: '20px', color: '#88ff88' })
+        .setScrollFactor(0).setDepth(D + 1).setOrigin(0.5));
+    }
+
+    // Score table
+    let ty = cy - 30;
+    push(this.add.text(cx, ty, 'PLAYER          K    D    OBJ', {
+      fontSize: '11px', color: '#556677', fontFamily: 'monospace',
+    }).setScrollFactor(0).setDepth(D + 1).setOrigin(0.5));
+    ty += 18;
+
+    const net = networkManager;
+    for (const s of d.scores) {
+      const isMe = s.playerId === net.playerId;
+      push(this.add.text(cx, ty,
+        `${(s.name + '                  ').slice(0, 16)} ${String(s.kills).padStart(4)}${String(s.deaths).padStart(5)}${String(s.objectives).padStart(6)}`,
+        { fontSize: '11px', color: isMe ? '#aaffaa' : '#aabbcc', fontFamily: 'monospace' })
+        .setScrollFactor(0).setDepth(D + 1).setOrigin(0.5));
+      ty += 16;
+    }
+
+    const btnY = Math.max(cy + 80, ty + 30);
+    const lobbyBtn = push(this.add.rectangle(cx, btnY, 200, 44, 0x1a4a1a)
+      .setStrokeStyle(2, 0x44aa44).setScrollFactor(0).setDepth(D + 1)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+        networkManager.leaveRoom();
+        this.scene.start('LobbyScene');
+      })
+      .on('pointerover', () => (lobbyBtn as Phaser.GameObjects.Rectangle).setFillStyle(0x2a6a2a))
+      .on('pointerout',  () => (lobbyBtn as Phaser.GameObjects.Rectangle).setFillStyle(0x1a4a1a)));
+    push(this.add.text(cx, btnY, 'BACK TO LOBBY', { fontSize: '16px', color: '#88ff88', fontStyle: 'bold' })
       .setScrollFactor(0).setDepth(D + 2).setOrigin(0.5));
   }
 
@@ -572,7 +1021,10 @@ export class GameScene extends Phaser.Scene {
         if (tile === DisplayTile.Forest) return;
         t.trees -= COST_WALL;
         if (tile === DisplayTile.Sea || tile === DisplayTile.Shallow) {
-          this.dispatchSoldier(tileX, tileY, () => this.ensureBoatAtTile(tileX, tileY));
+          this.dispatchSoldier(tileX, tileY, () => {
+            this.ensureBoatAtTile(tileX, tileY);
+            if (this.multiplayerMode) networkManager.sendBoatAdded(tileX, tileY);
+          });
         } else {
           this.dispatchSoldier(tileX, tileY, () => this.setTile(tileX, tileY, DisplayTile.Wall));
         }
@@ -584,7 +1036,11 @@ export class GameScene extends Phaser.Scene {
         t.trees -= COST_PILLBOX;
         t.pillsCarried = 0;
         this.dispatchSoldier(tileX, tileY, () => {
-          this.pillboxes.addPill(tileX, tileY);
+          const pill = this.pillboxes.addPill(tileX, tileY);
+          if (this.multiplayerMode) {
+            const idx = this.pillboxes.pills.indexOf(pill);
+            networkManager.sendPillboxUpdate(idx, networkManager.playerId, 4, true);
+          }
         });
         break;
 
@@ -594,11 +1050,10 @@ export class GameScene extends Phaser.Scene {
         t.mines--;
         this.dispatchSoldier(tileX, tileY, () => {
           const sprite = this.add.sprite(
-            (tileX + 0.5) * TILE_SIZE,
-            (tileY + 0.5) * TILE_SIZE,
-            'mine',
+            (tileX + 0.5) * TILE_SIZE, (tileY + 0.5) * TILE_SIZE, 'mine',
           ).setDepth(1);
           this.mines.push({ tileX, tileY, sprite });
+          if (this.multiplayerMode) networkManager.sendMineAdded(tileX, tileY);
         }, () => this.soundManager.playLayMine());
         break;
     }
@@ -614,6 +1069,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private checkPillPickup() {
+    if (this.multiplayerMode) return; // MP: pills don't drop pickups
     if (this.tank.pillsCarried >= 1) return;
     const tx = this.tank.tileX;
     const ty = this.tank.tileY;
@@ -650,9 +1106,7 @@ export class GameScene extends Phaser.Scene {
   private ensureBoatAtTile(tileX: number, tileY: number) {
     if (this.boats.some(b => b.tileX === tileX && b.tileY === tileY)) return;
     const sprite = this.add.sprite(
-      (tileX + 0.5) * TILE_SIZE,
-      (tileY + 0.5) * TILE_SIZE,
-      'boat',
+      (tileX + 0.5) * TILE_SIZE, (tileY + 0.5) * TILE_SIZE, 'boat',
     ).setDepth(1);
     this.boats.push({ tileX, tileY, sprite });
   }
@@ -666,12 +1120,10 @@ export class GameScene extends Phaser.Scene {
 
     if (this.inBoat && this.activeBoat) {
       if (onWater) {
-        // Move boat with tank pixel-for-pixel
         this.activeBoat.tileX = tx;
         this.activeBoat.tileY = ty;
         this.activeBoat.sprite.setPosition(this.tank.x, this.tank.y);
       } else {
-        // Exited water — drop boat at last water tile (sprite stays where it is)
         this.inBoat     = false;
         this.activeBoat = null;
       }
@@ -701,6 +1153,7 @@ export class GameScene extends Phaser.Scene {
         this.setTile(m.tileX, m.tileY, DisplayTile.Crater);
         const killed = this.tank.takeDamage(3);
         if (killed) this.time.delayedCall(0, () => this.onTankKilled());
+        if (this.multiplayerMode) networkManager.sendMineDetonated(m.tileX, m.tileY);
         break;
       }
     }
@@ -719,10 +1172,11 @@ export class GameScene extends Phaser.Scene {
       this.lastBaseTileY = ty;
 
       if (base.owner === 0xFF) {
-        // Neutral → captured
+        // Neutral → capture
         base.owner = 0x00;
         this.baseRects[i]?.setFillStyle(this.teamColor());
         this.soundManager.playBuildTile();
+        if (this.multiplayerMode) networkManager.sendBaseUpdate(i, networkManager.playerId);
       } else if (base.owner === 0x00) {
         // Friendly → resupply
         this.tank.shells = 200;
@@ -735,7 +1189,7 @@ export class GameScene extends Phaser.Scene {
     this.lastBaseTileY = -1;
   }
 
-  // ─── Helpers ────────────────────────────────────────────────────────────────
+  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private teamColor(): number {
     const stored = localStorage.getItem(STORAGE_COLOR);
@@ -749,7 +1203,6 @@ export class GameScene extends Phaser.Scene {
     return this.mapData.terrain[ty]?.[tx] ?? 0;
   }
 
-  /** dist=true skips the explosion sound (caller already played a mine explosion). */
   private spawnExplosionAt(x: number, y: number, skipSound = false) {
     const s = this.add.sprite(x, y, 'explosion').setDepth(8);
     this.time.delayedCall(600, () => s.destroy());
@@ -761,37 +1214,20 @@ export class GameScene extends Phaser.Scene {
     return Math.min(1, Math.hypot(wx - this.tank.x, wy - this.tank.y) / MAX_HEAR);
   }
 
-  // ─── Minimap ────────────────────────────────────────────────────────────────
+  // ─── Minimap ──────────────────────────────────────────────────────────────
 
-  // Terrain fill colors indexed by DisplayTile (matching BootScene TILE_DEFS)
   private static readonly MINIMAP_COLORS: number[] = [
-    0x007888, // 0 Sea
-    0x009999, // 1 Shallow
-    0x050a05, // 2 Swamp
-    0x5a3520, // 3 Crater
-    0xa08050, // 4 Road
-    0x0a1a0a, // 5 Forest
-    0x7a6a50, // 6 Rubble
-    0x2a4a18, // 7 Grass
-    0x4a4a4a, // 8 Wall
-    0x6a6a6a, // 9 DamagedWall
-    0x5a5040, // 10 Mountain
+    0x007888, 0x009999, 0x050a05, 0x5a3520, 0xa08050,
+    0x0a1a0a, 0x7a6a50, 0x2a4a18, 0x4a4a4a, 0x6a6a6a, 0x5a5040,
   ];
 
   private static readonly MINI = 128;
 
-  private _minimapObjX() {
-    return this.scale.width - GameScene.MINI - 4 - PANEL_WIDTH;
-  }
-
-  private _minimapObjY() {
-    return this.scale.height - GameScene.MINI - 4;
-  }
+  private _minimapObjX() { return this.scale.width  - GameScene.MINI - 4 - PANEL_WIDTH; }
+  private _minimapObjY() { return this.scale.height - GameScene.MINI - 4; }
 
   private buildMinimap() {
     const { MINI, MINIMAP_COLORS } = GameScene;
-
-    // Prerender terrain as a 256×256 texture (1px per tile)
     const gfx = this.make.graphics({ x: 0, y: 0 });
     for (let ty = 0; ty < MAP_SIZE; ty++) {
       for (let tx = 0; tx < MAP_SIZE; tx++) {
@@ -804,18 +1240,9 @@ export class GameScene extends Phaser.Scene {
     gfx.generateTexture('minimap_terrain', MAP_SIZE, MAP_SIZE);
     gfx.destroy();
 
-    // Sprite displayed at 0.5 scale → 128×128 on screen
     this.minimapTerrain = this.add.sprite(this._minimapObjX(), this._minimapObjY(), 'minimap_terrain')
-      .setScrollFactor(0)
-      .setScale(MINI / MAP_SIZE)
-      .setOrigin(0, 0)
-      .setDepth(90);
-
-    // Blip overlay — cleared and redrawn each frame
-    this.minimapBlip = this.add.graphics()
-      .setScrollFactor(0)
-      .setDepth(91);
-
+      .setScrollFactor(0).setScale(MINI / MAP_SIZE).setOrigin(0, 0).setDepth(90);
+    this.minimapBlip = this.add.graphics().setScrollFactor(0).setDepth(91);
     this.uiCam.ignore([this.minimapTerrain, this.minimapBlip]);
   }
 
@@ -830,8 +1257,7 @@ export class GameScene extends Phaser.Scene {
     // Pillbox dots
     for (const pill of this.pillboxes.pills) {
       const col = pill.owner === 'friendly' ? 0x44ff44
-                : pill.owner === 'enemy'    ? 0xff4444
-                                             : 0xaaaaaa;
+                : pill.owner === 'enemy'    ? 0xff4444 : 0xaaaaaa;
       const mx = objX + (pill.x / W) * MINI;
       const my = objY + (pill.y / W) * MINI;
       this.minimapBlip.fillStyle(col, 0.9);
@@ -847,7 +1273,20 @@ export class GameScene extends Phaser.Scene {
       this.minimapBlip.fillRect(mx - 1, my - 1, 2, 2);
     }
 
-    // Player dot (white, on top)
+    // Ghost dots (MP)
+    if (this.multiplayerMode && this.ghostManager) {
+      for (const id of this.ghostManager.getAlivePlayerIds()) {
+        const sprite = this.ghostManager.getSpriteByPlayerId(id);
+        if (!sprite?.visible) continue;
+        const col = networkManager.isMyTeam(id) ? 0x44ddff : 0xff6644;
+        const mx = objX + (sprite.x / W) * MINI;
+        const my = objY + (sprite.y / W) * MINI;
+        this.minimapBlip.fillStyle(col, 0.9);
+        this.minimapBlip.fillCircle(mx, my, 1.5);
+      }
+    }
+
+    // Player dot
     if (!this.dead) {
       const px = objX + (this.tank.x / W) * MINI;
       const py = objY + (this.tank.y / W) * MINI;
@@ -855,34 +1294,31 @@ export class GameScene extends Phaser.Scene {
       this.minimapBlip.fillCircle(px, py, 2);
     }
 
-    // Border
     this.minimapBlip.lineStyle(1, 0x777777, 0.9);
     this.minimapBlip.strokeRect(objX, objY, MINI, MINI);
+
+    // Spectator overlay
+    if (this.multiplayerMode && this.dead && this.spectatorMode) {
+      this.minimapBlip.lineStyle(1, 0x4488ff, 0.6);
+      this.minimapBlip.strokeRect(objX, objY + MINI + 2, MINI, 14);
+      this.minimapBlip.fillStyle(0x00000099);
+      this.minimapBlip.fillRect(objX, objY + MINI + 2, MINI, 14);
+    }
   }
 
-  // ─── HUD ────────────────────────────────────────────────────────────────────
+  // ─── HUD ──────────────────────────────────────────────────────────────────
 
   private buildHUD() {
     const style = {
-      fontSize: '12px',
-      color: '#ffffff',
-      backgroundColor: '#00000099',
-      padding: { x: 6, y: 4 },
+      fontSize: '12px', color: '#ffffff',
+      backgroundColor: '#00000099', padding: { x: 6, y: 4 },
     };
+    this.hudText      = this.add.text(6, 8, '', style).setScrollFactor(0).setDepth(30);
+    this.resourceText = this.add.text(6, 60, '', style).setScrollFactor(0).setDepth(30);
 
-    // x=6: with cameras.main viewport at x=100, renders at canvas x=106 (just right of panel)
-    this.hudText = this.add.text(6, 8, '', style)
-      .setScrollFactor(0).setDepth(30);
-
-    this.resourceText = this.add.text(6, 60, '', style)
-      .setScrollFactor(0).setDepth(30);
-
-    // ── Stat bars — owned by uiCam, no scrollFactor needed ─────────────────
-    const ICO   = 16;
-    const PAD   = 6;
-    const GAP   = 3;
-    const BL    = PAD + ICO + GAP;
-    const BF    = PANEL_WIDTH - BL - PAD;
+    const ICO  = 16; const PAD = 6; const GAP = 3;
+    const BL   = PAD + ICO + GAP;
+    const BF   = PANEL_WIDTH - BL - PAD;
     const BAR_H = 8;
     const BAR_START  = 512;
     const BAR_STRIDE = 26;
@@ -913,7 +1349,10 @@ export class GameScene extends Phaser.Scene {
   private updateHUD() {
     if (this.dead) {
       const secs = Math.ceil(this.respawnTimer / 1000);
-      this.hudText.setText(`DESTROYED — respawning in ${secs}s`);
+      const label = this.multiplayerMode && this.spectatorMode
+        ? `DESTROYED — respawning in ${secs}s  (Q/E to cycle views)`
+        : `DESTROYED — respawning in ${secs}s`;
+      this.hudText.setText(label);
       this.resourceText.setText('');
     } else {
       const tileVal  = this.getTileUnderTank();
@@ -921,14 +1360,10 @@ export class GameScene extends Phaser.Scene {
       const terrain  = this.TERRAIN_NAMES[tileVal] ?? '?';
       const busy     = this.builder.isBusy ? '  [soldier out]' : '';
       const action   = this.actionPanel.selectedAction;
-
       const pillLabel = this.tank.pillsCarried > 0 ? '  [pill]' : '';
-      this.hudText.setText(
-        `Spd: ${spd}  Terrain: ${terrain}\nAction: ${action}${busy}${pillLabel}`,
-      );
+      this.hudText.setText(`Spd: ${spd}  Terrain: ${terrain}\nAction: ${action}${busy}${pillLabel}`);
       this.resourceText.setText('');
 
-      // Resize bars (BF=69, matching buildHUD)
       const BF = 69;
       this.statBars.hp    .setSize(Math.max(0, (this.tank.health / 10)  * BF), 8);
       this.statBars.shells.setSize(Math.max(0, (this.tank.shells / 200) * BF), 8);
@@ -936,12 +1371,13 @@ export class GameScene extends Phaser.Scene {
       this.statBars.trees .setSize(Math.max(0, (this.tank.trees  / 40)  * BF), 8);
     }
 
-    // Timer + score (always updated)
     const remaining = Math.max(0, this.gameTimer);
     const mins = Math.floor(remaining / 60000);
     const secs = Math.floor((remaining % 60000) / 1000);
     const score = this.countScore();
     this.timerText.setText(`⏱ ${mins}:${secs.toString().padStart(2, '0')}`);
-    this.scoreText.setText(`⚑ ${score.friendly}/${score.total}`);
+    this.scoreText.setText(this.multiplayerMode
+      ? `⚑ ${score.friendly}/${score.total}`
+      : `⚑ ${score.friendly}/${score.total}`);
   }
 }
