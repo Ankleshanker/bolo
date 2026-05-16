@@ -1,0 +1,18 @@
+services:
+  server:
+    build: ./server
+    container_name: bolo-server
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - CORS_ORIGIN=https://ankleshanker.github.io
+    # No ports exposed externally — matrix-nginx proxies to bolo-server:3000
+    networks:
+      - matrix-net
+
+networks:
+  # Join the existing Matrix nginx network so matrix-nginx can reach this container
+  matrix-net:
+    external: true
+    name: matrix_matrix-net

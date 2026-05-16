@@ -1,0 +1,3 @@
+# NOT USED — TLS is handled by the existing matrix-nginx container on Lightsail.
+# See deploy/nginx-bolo-final.conf for the nginx config that adds bolo.alisted.app
+# as a virtual host alongside matrix.alisted.app.
