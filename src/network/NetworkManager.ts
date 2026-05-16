@@ -109,7 +109,7 @@ const SERVER_EVENTS: (keyof NetEvents)[] = [
 ];
 
 const SERVER_URL = import.meta.env.PROD
-  ? 'https://bolo.alisted.app'
+  ? 'https://api.bolo-online.com'
   : 'http://localhost:3000';
 
 const STORAGE_KEY = 'bolo_playerId';

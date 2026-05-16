@@ -18,7 +18,7 @@ import type {
 import type { GameRoom } from './GameRoom.js';
 
 const PORT   = parseInt(process.env.PORT   ?? '3000', 10);
-const ORIGIN = process.env.CORS_ORIGIN     ?? 'https://ankleshanker.github.io';
+const ORIGIN = process.env.CORS_ORIGIN     ?? 'https://bolo-online.com';
 
 const app        = express();
 const httpServer = createServer(app);

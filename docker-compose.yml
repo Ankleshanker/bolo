@@ -6,7 +6,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - CORS_ORIGIN=https://ankleshanker.github.io
+      - CORS_ORIGIN=https://bolo-online.com
     # No ports exposed externally — matrix-nginx proxies to bolo-server:3000
     networks:
       - matrix-net
