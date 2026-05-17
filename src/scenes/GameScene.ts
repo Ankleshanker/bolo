@@ -382,9 +382,9 @@ export class GameScene extends Phaser.Scene {
       const i = this.mines.findIndex(m => m.tileX === d.tileX && m.tileY === d.tileY);
       if (i >= 0) { this.mines[i].sprite.destroy(); this.mines.splice(i, 1); }
       this.setTile(d.tileX, d.tileY, DisplayTile.Crater, false);
-      this.soundManager.playMineExplosion();
       const cx = (d.tileX + 0.5) * TILE_SIZE;
       const cy = (d.tileY + 0.5) * TILE_SIZE;
+      this.soundManager.playMineExplosion(this.soundDist(cx, cy));
       this.spawnExplosionAt(cx, cy, true);
       // If we triggered it (our own mine detonated remotely), damage already applied locally
     });
@@ -766,7 +766,7 @@ export class GameScene extends Phaser.Scene {
         const next = WALL_DAMAGE_CHAIN[t.index];
         if (next !== undefined) this.setTile(t.x, t.y, next);
         this.playerBullets.kill(bullet as Phaser.Physics.Arcade.Sprite);
-        this.soundManager.playHitBuilding();
+        this.soundManager.playHitBuilding(this.soundDist((t.x + 0.5) * TILE_SIZE, (t.y + 0.5) * TILE_SIZE));
       },
     );
 
@@ -837,7 +837,7 @@ export class GameScene extends Phaser.Scene {
           // Friendly-fire check
           if (!networkManager.settings?.friendlyFire && networkManager.isMyTeam(targetId)) return;
           this.playerBullets.kill(bullet);
-          this.soundManager.playHitTank();
+          this.soundManager.playHitTank(this.soundDist(ghost.x, ghost.y));
           networkManager.sendBulletHit(targetId, 1);
         },
       );
@@ -1032,7 +1032,7 @@ export class GameScene extends Phaser.Scene {
             this.setTile(tileX, tileY, DisplayTile.Grass);
             t.trees = Math.min(40, t.trees + TREES_PER_HARVEST);
           }
-        }, () => this.soundManager.playChopTree());
+        }, (dist) => this.soundManager.playChopTree(dist));
         break;
 
       case 'buildRoad':
@@ -1080,17 +1080,18 @@ export class GameScene extends Phaser.Scene {
           ).setDepth(1);
           this.mines.push({ tileX, tileY, sprite });
           if (this.multiplayerMode) networkManager.sendMineAdded(tileX, tileY);
-        }, () => this.soundManager.playLayMine());
+        }, (dist) => this.soundManager.playLayMine(dist));
         break;
     }
   }
 
-  private dispatchSoldier(tileX: number, tileY: number, onArrive: () => void, sound?: () => void) {
+  private dispatchSoldier(tileX: number, tileY: number, onArrive: () => void, sound?: (dist: number) => void) {
     const toX = (tileX + 0.5) * TILE_SIZE;
     const toY = (tileY + 0.5) * TILE_SIZE;
     this.builder.dispatch(toX, toY, () => ({ x: this.tank.x, y: this.tank.y }), () => {
       onArrive();
-      (sound ?? (() => this.soundManager.playBuildTile()))();
+      const dist = this.soundDist(toX, toY);
+      (sound ?? ((d) => this.soundManager.playBuildTile(d)))(dist);
     });
   }
 
@@ -1121,7 +1122,7 @@ export class GameScene extends Phaser.Scene {
         const ty = Math.floor(b.y / TILE_SIZE);
         if (this.mapData.terrain[ty]?.[tx] === DisplayTile.Forest) {
           this.setTile(tx, ty, DisplayTile.Grass);
-          this.soundManager.playHitTree();
+          this.soundManager.playHitTree(this.soundDist(b.x, b.y));
           this.playerBullets.kill(b);
           this.pillboxBullets.kill(b);
         }
@@ -1174,7 +1175,7 @@ export class GameScene extends Phaser.Scene {
         const { x, y } = m.sprite;
         m.sprite.destroy();
         this.mines.splice(i, 1);
-        this.soundManager.playMineExplosion();
+        this.soundManager.playMineExplosion(this.soundDist(x, y));
         this.spawnExplosionAt(x, y, true);
         this.setTile(m.tileX, m.tileY, DisplayTile.Crater);
         const killed = this.tank.takeDamage(3);
