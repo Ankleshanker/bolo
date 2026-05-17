@@ -13,6 +13,7 @@ import { InputHandler } from '../input/InputHandler';
 import { ActionPanel, PANEL_WIDTH } from '../ui/ActionPanel';
 import { SettingsPanel, STORAGE_COLOR } from '../ui/SettingsPanel';
 import { SoundManager } from '../audio/SoundManager';
+import { Chyron } from '../ui/Chyron';
 import { networkManager } from '../network/NetworkManager';
 import { GhostTankManager } from '../network/GhostTankManager';
 import type { S2C_GameStart, S2C_GameOver, S2C_StateSnapshot } from '../network/types.ts';
@@ -110,6 +111,8 @@ export class GameScene extends Phaser.Scene {
   private spectatorTargetIdx = 0;
   private mpGameStart: S2C_GameStart | null = null;
   private killFeedObjs: Phaser.GameObjects.Text[] = [];
+  private chyron!: Chyron;
+  private playerNames = new Map<string, string>();
   // Store net handlers as arrow fns so we can remove them on shutdown
   private _netHandlers: Array<{ event: string; fn: (d: unknown) => void }> = [];
 
@@ -132,6 +135,7 @@ export class GameScene extends Phaser.Scene {
     this.mpSendAccum     = 0;
     this.killFeedObjs    = [];
     this._netHandlers    = [];
+    this.playerNames     = new Map();
   }
 
   create() {
@@ -191,6 +195,8 @@ export class GameScene extends Phaser.Scene {
     if (this.multiplayerMode && this.dead && this.spectatorMode) {
       this._updateSpectator();
     }
+
+    this.chyron.update(delta);
 
     if (this.dead) {
       this.handleRespawn(delta);
@@ -315,6 +321,7 @@ export class GameScene extends Phaser.Scene {
 
     // ── Apply initial players as ghosts ─────────────────────────────────────
     for (const [id, p] of net.players) {
+      this.playerNames.set(id, p.name);
       if (id === net.playerId) continue;
       this.ghostManager!.addGhost(id, p.name, p.color, p.teamIndex);
     }
@@ -334,9 +341,11 @@ export class GameScene extends Phaser.Scene {
 
     // ── Player events ────────────────────────────────────────────────────────
     this._addNetHandler('playerJoined', (d) => {
+      this.playerNames.set(d.player.playerId, d.player.name);
       if (d.player.playerId !== net.playerId) {
         this.ghostManager!.addGhost(d.player.playerId, d.player.name, d.player.color, d.player.teamIndex);
       }
+      this.chyron.push(`${d.player.name} has joined the battle.`);
     });
 
     this._addNetHandler('playerGhosted', (d) => {
@@ -344,11 +353,15 @@ export class GameScene extends Phaser.Scene {
     });
 
     this._addNetHandler('playerReconnected', (d) => {
+      this.playerNames.set(d.playerId, d.player.name);
       this.ghostManager!.setGhosted(d.playerId, false);
     });
 
     this._addNetHandler('playerRemoved', (d) => {
+      const name = this.playerNames.get(d.playerId) ?? 'A player';
+      this.playerNames.delete(d.playerId);
       this.ghostManager!.removeGhost(d.playerId);
+      this.chyron.push(`${name} left the battle.`);
     });
 
     // ── Tank positions ────────────────────────────────────────────────────────
@@ -372,6 +385,7 @@ export class GameScene extends Phaser.Scene {
       if (!pill) return;
       if (!d.alive) {
         if (pill.alive) pill.takeDamage(pill.health); // kill it
+        if (!networkManager.isHost) this.chyron.push('A pillbox was destroyed.');
       } else {
         const owner = d.ownerId === null ? 'neutral'
           : net.isMyTeam(d.ownerId) ? 'friendly' : 'enemy';
@@ -390,9 +404,15 @@ export class GameScene extends Phaser.Scene {
       } else if (net.isMyTeam(d.ownerId)) {
         base.owner = 0x00; // friendly
         this.baseRects[d.index]?.setFillStyle(this.teamColor());
+        if (d.ownerId !== net.playerId) {
+          const name = this.playerNames.get(d.ownerId) ?? 'A teammate';
+          this.chyron.push(`${name} claimed a base.`);
+        }
       } else {
         base.owner = 0x01; // enemy
         this.baseRects[d.index]?.setFillStyle(0xff4444);
+        const name = this.playerNames.get(d.ownerId) ?? 'An enemy';
+        this.chyron.push(`${name} claimed a base.`);
       }
     });
 
@@ -449,6 +469,7 @@ export class GameScene extends Phaser.Scene {
 
     this._addNetHandler('playerKill', (d) => {
       this._showKillFeed(`${d.killerName} ✕ ${d.victimName}`);
+      this.chyron.push(`${d.killerName} destroyed ${d.victimName}.`);
     });
 
     // ── Pillbox bullets (host-authoritative) ──────────────────────────────────
@@ -759,6 +780,7 @@ export class GameScene extends Phaser.Scene {
       onComplete: () => {
         this._sinking = false;
         this.tank.sprite.setScale(1).setAlpha(1);
+        this.chyron.push('You drowned.');
         this.onTankKilled();
       },
     });
@@ -831,6 +853,7 @@ export class GameScene extends Phaser.Scene {
             networkManager.sendPillboxUpdate(idx, died ? null : networkManager.playerId, p.health, !died);
           }
           if (died) {
+            this.chyron.push('A pillbox was destroyed.');
             const { x, y } = p;
             this.time.delayedCall(0, () => {
               this.spawnExplosionAt(x, y);
@@ -928,12 +951,13 @@ export class GameScene extends Phaser.Scene {
       ...this.settingsPanel.gearObjects,
       ...this.hudPanelObjects,
     ]);
-    this.uiCam.ignore([this.hudText, this.resourceText]);
+    this.uiCam.ignore([this.hudText, this.resourceText, ...this.chyron.getObjects()]);
 
     this.scale.on('resize', (gameSize: { width: number; height: number }) => {
       this.cameras.main.setViewport(PANEL_WIDTH, 0, gameSize.width - PANEL_WIDTH, gameSize.height);
       this.uiCam.setSize(PANEL_WIDTH, gameSize.height);
       this.minimapTerrain?.setPosition(this._minimapObjX(), this._minimapObjY());
+      this.chyron.onResize(gameSize.width - PANEL_WIDTH, gameSize.height);
     });
   }
 
@@ -1238,6 +1262,7 @@ export class GameScene extends Phaser.Scene {
         this.spawnExplosionAt(x, y, true);
         this.setTile(m.tileX, m.tileY, DisplayTile.Crater);
         const killed = this.tank.takeDamage(3);
+        this.chyron.push('You hit a mine!');
         if (killed) this.time.delayedCall(0, () => this.onTankKilled());
         if (this.multiplayerMode) networkManager.sendMineDetonated(m.tileX, m.tileY);
         break;
@@ -1262,6 +1287,7 @@ export class GameScene extends Phaser.Scene {
         base.owner = 0x00;
         this.baseRects[i]?.setFillStyle(this.teamColor());
         this.soundManager.playBuildTile();
+        this.chyron.push('You claimed a base.');
         if (this.multiplayerMode) networkManager.sendBaseUpdate(i, networkManager.playerId);
       } else if (base.owner === 0x00) {
         // Friendly → resupply
@@ -1425,6 +1451,8 @@ export class GameScene extends Phaser.Scene {
       mines:  makeBar('mine',        2, 0xcc4433),
       trees:  makeBar('icon_wood',   3, 0x7a5230),
     };
+
+    this.chyron = new Chyron(this, this.scale.width - PANEL_WIDTH, this.scale.height);
   }
 
   private readonly TERRAIN_NAMES: Record<number, string> = {
