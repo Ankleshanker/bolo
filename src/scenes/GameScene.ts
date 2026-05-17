@@ -232,10 +232,36 @@ export class GameScene extends Phaser.Scene {
     this.pillboxBullets.update(delta);
     this.remoteBullets?.update(delta);
     this.clearForestUnderBullets();
-    this.pillboxes.update(delta, this.tank.x, this.tank.y, this.pillboxBullets, inForest,
-      (px, py) => this.soundManager.playPillboxFire(this.soundDist(px, py)));
-    this.builder.update(delta);
+
+    // Update ghost positions BEFORE pillbox AI so the host's target list is current
     this.ghostManager?.update();
+
+    if (this.multiplayerMode) {
+      if (networkManager.isHost) {
+        // Host is authoritative: build target list from ALL alive players and run AI
+        const pillTargets: { x: number; y: number; hidden: boolean }[] = [];
+        if (!this.dead) pillTargets.push({ x: this.tank.x, y: this.tank.y, hidden: inForest });
+        for (const t of (this.ghostManager?.getAlivePillTargets() ?? [])) pillTargets.push(t);
+        this.pillboxes.update(delta, pillTargets, this.pillboxBullets,
+          (pillIdx, px, py, ang) => {
+            this.soundManager.playPillboxFire(this.soundDist(px, py));
+            networkManager.sendPillboxBulletFired(pillIdx, px, py, ang);
+          });
+      } else {
+        // Non-host: run AI for visual rotation only (no bullets — host broadcasts shots)
+        this.pillboxes.update(delta,
+          [{ x: this.tank.x, y: this.tank.y, hidden: inForest }],
+          null);
+      }
+    } else {
+      // Single-player: normal AI
+      this.pillboxes.update(delta,
+        [{ x: this.tank.x, y: this.tank.y, hidden: inForest }],
+        this.pillboxBullets,
+        (_idx, px, py) => this.soundManager.playPillboxFire(this.soundDist(px, py)));
+    }
+
+    this.builder.update(delta);
 
     this.checkPillPickup();
     this.checkMines();
@@ -423,6 +449,18 @@ export class GameScene extends Phaser.Scene {
 
     this._addNetHandler('playerKill', (d) => {
       this._showKillFeed(`${d.killerName} ✕ ${d.victimName}`);
+    });
+
+    // ── Pillbox bullets (host-authoritative) ──────────────────────────────────
+    // Non-hosts receive this event and fire the bullet locally.
+    // The host fires locally and does NOT receive its own relay.
+    this._addNetHandler('pillboxBulletFired', (d) => {
+      // Sync pill sprite rotation to match host's decision
+      const pill = this.pillboxes.pills[d.pillIndex];
+      if (pill) pill.sprite.angle = d.angleDeg;
+      // Fire bullet into pillboxBullets pool — existing tank overlap handles damage
+      this.pillboxBullets.fire(d.x, d.y, d.angleDeg);
+      this.soundManager.playPillboxFire(this.soundDist(d.x, d.y));
     });
 
     // ── Timer ──────────────────────────────────────────────────────────────────
@@ -847,6 +885,21 @@ export class GameScene extends Phaser.Scene {
         this.remoteBullets!.group,
         this.groundLayer,
         (bullet) => { this.remoteBullets!.kill(bullet as Phaser.Physics.Arcade.Sprite); },
+      );
+
+      // Phase 2: pillbox bullets visually stop when they reach a ghost sprite.
+      // Damage is handled via the existing pillboxBullets vs tank.sprite overlap
+      // on each client's own machine — no additional damage logic needed here.
+      this.physics.add.overlap(
+        this.pillboxBullets.group,
+        this.ghostManager.group,
+        (obj1, obj2) => {
+          const bullet = this.pillboxBullets.group.contains(obj1 as Phaser.GameObjects.GameObject)
+            ? obj1 as Phaser.Physics.Arcade.Sprite
+            : obj2 as Phaser.Physics.Arcade.Sprite;
+          if (!bullet.active) return;
+          this.pillboxBullets.kill(bullet);
+        },
       );
     }
   }

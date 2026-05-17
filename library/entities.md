@@ -84,6 +84,7 @@ setGhosted(playerId, disconnected: boolean)       // toggle DC visual
 getSpriteByPlayerId(playerId): Sprite | undefined  // for spectator camera follow
 getPlayerIdBySprite(sprite): string | undefined   // for bullet hit attribution
 getAlivePlayerIds(): string[]                     // for spectator cycling
+getAlivePillTargets(): {x,y,hidden}[]             // for host pillbox AI target list
 ```
 
 ---
@@ -102,12 +103,13 @@ getAlivePlayerIds(): string[]                     // for spectator cycling
 
 In multiplayer, team-awareness comes from `networkManager.isMyTeam(ownerId)` — the server broadcasts owner by `playerId`.
 
-### AI (per frame, skipped when `targetHidden`)
+### AI (per frame)
 
 - Range: `SHOOT_RANGE_PX = 320`
+- Accepts `targets: PillTarget[]`; picks the nearest visible (non-hidden) target in range
 - Tracks target, snaps barrel to nearest 22.5°
 - Fire cooldown lerps: `COOLDOWN_CRIT (400ms)` at 1 HP → `COOLDOWN_FULL (1500ms)` at full health
-- Skipped entirely when `targetHidden = true` (tank in forest)
+- Pass `bullets = null` for rotation-only mode (non-host clients in MP)
 
 ### Health & damage
 

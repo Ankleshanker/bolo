@@ -178,6 +178,7 @@ States: `LOBBY → PLAYING → ENDED`
 | `mineAdded` | `{ tileX, tileY, ownerPlayerId }` | Relayed + stored in snapshot |
 | `mineDetonated` | `{ tileX, tileY }` | Relayed + snapshot mine removed |
 | `boatAdded` | `{ tileX, tileY }` | Relayed + stored in snapshot |
+| `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Host only; server relays to all other clients |
 | `ping` | callback | Server acks; client measures round-trip |
 
 ### S2C (server → client)
@@ -205,6 +206,7 @@ States: `LOBBY → PLAYING → ENDED`
 | `mineDetonated` | `{ tileX, tileY }` | |
 | `boatAdded` | `{ tileX, tileY }` | |
 | `timeUpdate` | `{ remaining: number }` | ms remaining; drives client timer in MP |
+| `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Relayed from host to all other clients |
 | `playerKill` | `{ killerId, killerName, victimId, victimName }` | Broadcast to room |
 | `gameOver` | `S2C_GameOver` | reason, winnerId, winnerName, scores[] |
 | `kicked` | — | Sent to kicked player before removal |
@@ -230,6 +232,22 @@ interface RoomSettings {
 ```
 
 `mapData` is only populated when the host uploads a custom .bmap in the lobby. It is stored in room settings and broadcast to all clients via `gameStart.settings.mapData`. Clients decode from base64 at map load time.
+
+---
+
+## Host-Authoritative Pillbox AI
+
+In multiplayer, only the host runs the full pillbox AI each frame:
+
+1. Host builds a `PillTarget[]` list: local tank (if alive) + all alive ghost positions (`ghostManager.getAlivePillTargets()`).
+2. `pillboxes.update()` picks the nearest visible target per pill, fires into `pillboxBullets`, calls `onShot(pillIndex, x, y, angleDeg)`.
+3. Host emits `pillboxBulletFired { pillIndex, x, y, angleDeg }` to the server.
+4. Server relays to **all other clients** (host excluded — it already fired locally).
+5. Non-host clients receive the event, set `pillboxes.pills[pillIndex].sprite.angle = angleDeg`, fire the bullet into their local `pillboxBullets` pool, and play the sound.
+6. The existing `pillboxBullets` vs `tank.sprite` overlap on each machine detects damage locally — no new hit protocol needed.
+7. `pillboxBullets` vs `ghostManager.group` overlap (Phase 2) kills the bullet visually when it reaches a ghost sprite on spectator screens.
+
+Non-hosts call `pillboxes.update()` with `bullets = null` — rotation logic runs (approximate visual using local tank target) but no bullet is created.
 
 ---
 

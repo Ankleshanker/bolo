@@ -297,6 +297,25 @@ export class GhostTankManager {
     return undefined;
   }
 
+  /**
+   * Returns interpolated positions of all alive, non-ghosted ghosts.
+   * Used by the host to build the pillbox target list each frame.
+   */
+  getAlivePillTargets(): { x: number; y: number; hidden: boolean }[] {
+    const out: { x: number; y: number; hidden: boolean }[] = [];
+    for (const ghost of this.ghosts.values()) {
+      if (ghost.ghosted) continue;
+      const newest = ghost.snapshots[ghost.snapshots.length - 1];
+      if (!newest?.alive) continue;
+      out.push({
+        x:      ghost.interpolated.x,
+        y:      ghost.interpolated.y,
+        hidden: newest.inForest,
+      });
+    }
+    return out;
+  }
+
   /** Returns all alive playerIds (for spectator camera cycling). */
   getAlivePlayerIds(): string[] {
     const out: string[] = [];

@@ -305,3 +305,17 @@ export interface S2C_GameOver {
 export interface S2C_Error {
   message: string;
 }
+
+export interface C2S_PillboxBulletFired {
+  pillIndex: number;
+  x:         number;
+  y:         number;
+  angleDeg:  number;
+}
+
+export interface S2C_PillboxBulletFired {
+  pillIndex: number;
+  x:         number;
+  y:         number;
+  angleDeg:  number;
+}

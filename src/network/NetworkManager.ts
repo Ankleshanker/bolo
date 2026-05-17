@@ -26,6 +26,7 @@ import type {
   S2C_TimeUpdate,
   S2C_PlayerKill,
   S2C_GameOver,
+  S2C_PillboxBulletFired,
 } from './types.ts';
 
 // ---------------------------------------------------------------------------
@@ -53,10 +54,11 @@ export type NetEvents = {
   mineDetonated:     S2C_MineDetonated;
   boatAdded:         S2C_BoatAdded;
   timeUpdate:        S2C_TimeUpdate;
-  playerKill:        S2C_PlayerKill;
-  gameOver:          S2C_GameOver;
-  kicked:            void;
-  error:             { message: string };
+  playerKill:           S2C_PlayerKill;
+  gameOver:             S2C_GameOver;
+  pillboxBulletFired:   S2C_PillboxBulletFired;
+  kicked:               void;
+  error:                { message: string };
 };
 
 // ---------------------------------------------------------------------------
@@ -90,9 +92,10 @@ function makeListenerMap(): ListenerMap {
     boatAdded:         new Set(),
     timeUpdate:        new Set(),
     playerKill:        new Set(),
-    gameOver:          new Set(),
-    kicked:            new Set(),
-    error:             new Set(),
+    gameOver:             new Set(),
+    pillboxBulletFired:   new Set(),
+    kicked:               new Set(),
+    error:                new Set(),
   };
 }
 
@@ -105,7 +108,8 @@ const SERVER_EVENTS: (keyof NetEvents)[] = [
   'playerReconnected', 'playerRemoved', 'settingsUpdated', 'hostChanged',
   'gameStart', 'stateSnapshot', 'tankState', 'bulletFired', 'bulletHit',
   'tileChanged', 'pillboxUpdate', 'baseUpdate', 'mineAdded', 'mineDetonated',
-  'boatAdded', 'timeUpdate', 'playerKill', 'gameOver', 'kicked', 'error',
+  'boatAdded', 'timeUpdate', 'playerKill', 'gameOver', 'pillboxBulletFired',
+  'kicked', 'error',
 ];
 
 const SERVER_URL = import.meta.env.PROD
@@ -259,6 +263,10 @@ export class NetworkManager {
 
   sendBoatAdded(tileX: number, tileY: number): void {
     this.socket?.emit('boatAdded', { tileX, tileY });
+  }
+
+  sendPillboxBulletFired(pillIndex: number, x: number, y: number, angleDeg: number): void {
+    this.socket?.emit('pillboxBulletFired', { pillIndex, x, y, angleDeg });
   }
 
   returnToLobby(): void {

@@ -122,6 +122,14 @@
 
 ---
 
+## Host-authoritative pillbox AI — 2026-05-17
+
+**Decision:** In multiplayer, only the host runs the full pillbox AI (picks nearest of all alive players, fires bullets, broadcasts `pillboxBulletFired {pillIndex, x, y, angleDeg}`). Non-hosts suppress local bullet firing (`bullets = null`) and fire locally only on receipt of the broadcast, relying on the existing `pillboxBullets` vs `tank.sprite` overlap for damage detection.
+**Why:** Each client previously ran independent AI targeting only its own local tank. This caused pillboxes to aim differently on each screen and meant bullets never hit ghost tanks (no `pillboxBullets` vs `ghostManager.group` overlap existed). Making the host authoritative synchronises both targeting and bullet positions. Since `pillboxBullets` already overlaps `tank.sprite` on every machine, each client correctly self-detects damage from the replicated bullets without any new damage protocol.
+**Applies to:** `src/entities/Pillbox.ts`, `src/scenes/GameScene.ts`, `src/network/NetworkManager.ts`, `src/network/GhostTankManager.ts`, `server/src/index.ts`.
+
+---
+
 ## Cloudflare Workers Assets for client hosting — 2026-05-17
 
 **Decision:** The client SPA is deployed as Cloudflare Workers Assets (via `npx wrangler deploy`) with a `wrangler.jsonc` config file. Not GitHub Pages; not Cloudflare Pages static hosting.

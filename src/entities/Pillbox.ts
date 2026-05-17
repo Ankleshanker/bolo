@@ -11,6 +11,14 @@ const MAX_HEALTH      = 4;
 
 export type PillOwner = 'neutral' | 'friendly' | 'enemy';
 
+/** A target position passed to pillbox AI. `hidden` = true means the target is
+ *  concealed in forest and should be ignored. */
+export interface PillTarget {
+  x:       number;
+  y:       number;
+  hidden?: boolean;
+}
+
 export class Pillbox {
   readonly sprite:      Phaser.Physics.Arcade.Sprite;
   private  crackSprite: Phaser.GameObjects.Sprite;
@@ -85,31 +93,46 @@ export class Pillbox {
     this.sprite.destroy();
   }
 
+  /**
+   * Run pillbox AI for one frame.
+   *
+   * @param targets  Array of potential targets; pill picks the nearest visible one.
+   * @param bullets  BulletManager to fire into, or `null` for rotation-only (no fire).
+   * @param onShot   Called when a bullet is actually fired (x, y, angleDeg of bullet origin).
+   */
   update(
     delta: number,
-    targetX: number,
-    targetY: number,
-    bullets: BulletManager,
-    targetHidden = false,
-    onShot?: (x: number, y: number) => void,
+    targets: PillTarget[],
+    bullets: BulletManager | null,
+    onShot?: (x: number, y: number, angleDeg: number) => void,
   ) {
     if (!this.alive || this.owner === 'friendly') return;
 
     this.cooldown = Math.max(0, this.cooldown - delta);
 
-    if (targetHidden) return; // tank is concealed in forest
+    // Pick nearest visible target within range
+    let nearest: PillTarget | null = null;
+    let nearestDist = Infinity;
+    for (const t of targets) {
+      if (t.hidden) continue;
+      const dx   = t.x - this.x;
+      const dy   = t.y - this.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < nearestDist && dist <= SHOOT_RANGE_PX) {
+        nearest     = t;
+        nearestDist = dist;
+      }
+    }
+    if (!nearest) return;
 
-    const dx   = targetX - this.x;
-    const dy   = targetY - this.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist > SHOOT_RANGE_PX) return;
-
+    const dx = nearest.x - this.x;
+    const dy = nearest.y - this.y;
     const targetAngle = Phaser.Math.RadToDeg(Math.atan2(dy, dx)) + 90;
     this.facing = Phaser.Math.Angle.WrapDegrees(targetAngle);
     const snapped = Math.round(this.facing / DIR_SNAP) * DIR_SNAP;
     this.sprite.angle = snapped;
 
-    if (this.cooldown === 0) {
+    if (this.cooldown === 0 && bullets !== null) {
       // Faster shoot as health falls: lerp between COOLDOWN_FULL and COOLDOWN_CRIT
       const t = (this.health - 1) / (MAX_HEALTH - 1); // 1.0 at full, 0.0 at 1 HP
       this.cooldown = COOLDOWN_CRIT + t * (COOLDOWN_FULL - COOLDOWN_CRIT);
@@ -120,7 +143,7 @@ export class Pillbox {
         this.y + Math.sin(rad) * 18,
         snapped,
       );
-      onShot?.(this.x, this.y);
+      onShot?.(this.x, this.y, snapped);
     }
   }
 }
@@ -155,16 +178,22 @@ export class PillboxManager {
     pill.destroy();
   }
 
+  /**
+   * @param targets  Passed through to each pill's AI (picks nearest visible).
+   * @param bullets  BulletManager, or `null` for rotation-only.
+   * @param onShot   Called per-shot: (pillIndex, x, y, angleDeg).
+   */
   update(
     delta: number,
-    targetX: number,
-    targetY: number,
-    bullets: BulletManager,
-    targetHidden = false,
-    onShot?: (x: number, y: number) => void,
+    targets: PillTarget[],
+    bullets: BulletManager | null,
+    onShot?: (pillIndex: number, x: number, y: number, angleDeg: number) => void,
   ) {
-    for (const pill of this.pills) {
-      pill.update(delta, targetX, targetY, bullets, targetHidden, onShot);
+    for (let i = 0; i < this.pills.length; i++) {
+      this.pills[i].update(
+        delta, targets, bullets,
+        onShot ? (x, y, ang) => onShot(i, x, y, ang) : undefined,
+      );
     }
   }
 

@@ -9,6 +9,7 @@ import type {
   C2S_TileChanged, C2S_PillboxUpdate, C2S_BaseUpdate,
   C2S_MineAdded, C2S_MineDetonated, C2S_BoatAdded,
   C2S_BulletFired, C2S_BulletHit, C2S_PlayerKill,
+  C2S_PillboxBulletFired,
   TankState,
   S2C_RoomJoined, S2C_PlayerJoined, S2C_PlayerGhosted,
   S2C_PlayerReconnected, S2C_PlayerRemoved, S2C_HostChanged,
@@ -340,6 +341,15 @@ io.on('connection', (socket) => {
     const playerId = room.socketToPlayer.get(socket.id);
     if (!playerId || data.shooterId !== playerId) return; // prevent spoofing
     io.to(room.roomId).emit('bulletHit', data);
+  });
+
+  // ── Pillbox bullet relay (host → all other clients) ──────────────────────
+  socket.on('pillboxBulletFired', (data: C2S_PillboxBulletFired) => {
+    const room = lobbyManager.getRoomBySocketId(socket.id);
+    if (!room || room.state !== 'PLAYING') return;
+    const playerId = room.socketToPlayer.get(socket.id);
+    if (!playerId || playerId !== room.hostPlayerId) return; // host only
+    socket.to(room.roomId).emit('pillboxBulletFired', data);
   });
 
   socket.on('playerKill', (data: C2S_PlayerKill) => {
