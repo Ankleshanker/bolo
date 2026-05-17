@@ -17,6 +17,27 @@ Multiplayer is built on Socket.io (WebSocket transport). The client has a typed 
 
 Nginx (`matrix-nginx` container on Lightsail) proxies WebSocket connections to the `bolo-server` Docker container on port 3000. TLS certs managed by certbot with Cloudflare DNS-01 challenge.
 
+### SSH access
+
+```
+Host: 100.50.52.68
+User: ubuntu
+Key:  C:/Users/BenFeingoldThoryn/OneDrive - Lincoln Institute of Land Policy/Desktop/Claude Cowork/Projects/Personal/Bolo/LightsailDefaultKey-us-east-1.pem
+```
+
+Standard deploy command (run after pushing to master):
+```bash
+ssh -i "C:/Users/BenFeingoldThoryn/OneDrive - Lincoln Institute of Land Policy/Desktop/Claude Cowork/Projects/Personal/Bolo/LightsailDefaultKey-us-east-1.pem" \
+  -o StrictHostKeyChecking=no ubuntu@100.50.52.68 \
+  "cd /opt/bolo && git pull && sudo docker compose up -d --build > /tmp/bolo-deploy.log 2>&1 && echo 'Deploy started'"
+```
+
+Verify health after deploy:
+```bash
+curl https://api.bolo-online.com/health
+# Expected: {"status":"ok","players":0}
+```
+
 ---
 
 ## NetworkManager (`src/network/NetworkManager.ts`)
