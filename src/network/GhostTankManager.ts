@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { TankState } from './types.ts';
+import { networkManager } from './NetworkManager.ts';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -249,9 +250,20 @@ export class GhostTankManager {
 
       ghost.interpolated = { x: ix, y: iy, angle: ia };
 
-      // --- Update sprite ---
+      // --- Update sprite position (always, so it's correct when emerging from forest) ---
       ghost.sprite.setPosition(ix, iy);
       ghost.sprite.setAngle(ia);
+
+      // Enemy tanks inside forest are invisible to this client
+      const hiddenFromMe = inForest && !networkManager.isMyTeam(ghost.playerId);
+      if (hiddenFromMe) {
+        ghost.sprite.setVisible(false);
+        ghost.nameLabel.setVisible(false);
+        ghost.healthBar.setVisible(false);
+        ghost.healthBarBg.setVisible(false);
+        continue;
+      }
+
       ghost.sprite.setVisible(true);
 
       if (ghost.ghosted) {
