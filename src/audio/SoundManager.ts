@@ -84,7 +84,7 @@ export class SoundManager {
   }
 
   playHitTree(dist = 0) {
-    this._playBuffer(this._randomBulletHit(), dist);
+    this._playBuffer(this.bulletHits[3], dist);
   }
 
   // ── Builder actions ───────────────────────────────────────────────────────
