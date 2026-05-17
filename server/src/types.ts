@@ -18,6 +18,7 @@ export interface RoomSettings {
   maxPlayers:   number;          // 2–16
   isPublic:     boolean;
   timerSeconds: number;          // default 300
+  mapData?:     string;          // base64-encoded .bmap binary (optional, for inline map upload)
 }
 
 export interface PlayerInfo {

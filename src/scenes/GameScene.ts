@@ -293,6 +293,19 @@ export class GameScene extends Phaser.Scene {
       this.ghostManager!.addGhost(id, p.name, p.color, p.teamIndex);
     }
 
+    // Pre-populate server snapshot with ALL objectives as neutral.
+    // Without this, the server only knows about objectives that have been updated,
+    // so claiming one base from an empty snapshot triggers a false domination win.
+    if (net.isHost) {
+      for (let i = 0; i < this.pillboxes.pills.length; i++) {
+        const pill = this.pillboxes.pills[i];
+        networkManager.sendPillboxUpdate(i, null, pill.health, pill.alive);
+      }
+      for (let i = 0; i < this.mapData.bases.length; i++) {
+        networkManager.sendBaseUpdate(i, null);
+      }
+    }
+
     // ── Player events ────────────────────────────────────────────────────────
     this._addNetHandler('playerJoined', (d) => {
       if (d.player.playerId !== net.playerId) {
@@ -524,6 +537,19 @@ export class GameScene extends Phaser.Scene {
   private loadMapData(): MapData {
     if (this.multiplayerMode && this.mpGameStart) {
       const gs = this.mpGameStart;
+      const inlineData = gs.settings?.mapData;
+      if (inlineData) {
+        try {
+          const binary = atob(inlineData);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const data = BoloMapParser.parse(bytes.buffer as ArrayBuffer);
+          console.log(`Loaded inline .bmap — pills:${data.pills.length} bases:${data.bases.length}`);
+          return data;
+        } catch (e) {
+          console.error('Failed to parse inline map data:', e);
+        }
+      }
       if (gs.mapType === 'bmap') {
         const raw = this.cache.binary.get('mapdata') as ArrayBuffer | null;
         if (raw) {
