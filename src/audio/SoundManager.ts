@@ -16,7 +16,8 @@ export class SoundManager {
   private pillboxFire:   AudioBuffer | null = null;
   private building:      AudioBuffer | null = null;
   private harvestTrees:  AudioBuffer | null = null;
-  private mineExp:       AudioBuffer | null = null;
+  private mineLay:       AudioBuffer | null = null;
+  private mineExplode:   AudioBuffer | null = null;
   private baseResupply:  AudioBuffer | null = null;
   private pillPickup:    AudioBuffer | null = null;
   private tankRespawn:   AudioBuffer | null = null;
@@ -70,7 +71,7 @@ export class SoundManager {
   }
 
   playMineExplosion(dist = 0) {
-    this._playBuffer(this.mineExp, dist);
+    this._playBuffer(this.mineExplode, dist);
   }
 
   // ── Bullet impacts ────────────────────────────────────────────────────────
@@ -153,19 +154,7 @@ export class SoundManager {
   }
 
   playLayMine(dist = 0) {
-    if (!this.enabled) return;
-    const now = this.ctx.currentTime;
-    const out = this._out(dist);
-    const osc  = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(820, now);
-    osc.frequency.exponentialRampToValueAtTime(290, now + 0.042);
-    gain.gain.setValueAtTime(0.22, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-    osc.connect(gain); gain.connect(out);
-    osc.start(now); osc.stop(now + 0.05);
-    this._noiseTo(0.03, 3200, 0.5, 0.10, 'highpass', out);
+    this._playBuffer(this.mineLay, dist);
   }
 
   // ── Tank sinking ──────────────────────────────────────────────────────────
@@ -221,7 +210,7 @@ export class SoundManager {
       }
     };
 
-    const [tankFire, pillboxFire, building, harvestTrees, mineExp,
+    const [tankFire, pillboxFire, building, harvestTrees, mineExp, mineExplode,
            baseResupply, pillPickup, tankRespawn, ...hits] =
       await Promise.all([
         load('/sfx/tank_fire.ogg'),
@@ -229,6 +218,7 @@ export class SoundManager {
         load('/sfx/building.ogg'),
         load('/sfx/harvest_trees.ogg'),
         load('/sfx/mine.ogg'),
+        load('/sfx/mine_explode.ogg'),
         load('/sfx/base_resupply.ogg'),
         load('/sfx/pill_pickup.ogg'),
         load('/sfx/tank_respawn.ogg'),
@@ -241,7 +231,8 @@ export class SoundManager {
     this.pillboxFire  = pillboxFire;
     this.building     = building;
     this.harvestTrees = harvestTrees;
-    this.mineExp      = mineExp;
+    this.mineLay      = mineExp;
+    this.mineExplode  = mineExplode;
     this.baseResupply = baseResupply;
     this.pillPickup   = pillPickup;
     this.tankRespawn  = tankRespawn;
