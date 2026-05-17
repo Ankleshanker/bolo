@@ -81,17 +81,26 @@ Actions queue is one deep — if the builder is busy, the click is silently disc
 
 ---
 
-## Bases (resupply)
+## Bases
 
-`checkBaseInteraction()` runs each frame in the update loop. When `tank.tileX/tileY` matches a base tile for the first time since last entry:
+`checkBaseInteraction()` runs each frame in the update loop. When `tank.tileX/tileY` matches a base tile:
 
+### Resupply (friendly base)
+
+When entering a base owned by the local player's team:
 - `tank.shells` → 200
 - `tank.health` → `min(health + 5, 10)`
 - `tank.mines` → `min(mines + 5, 20)`
 
-`lastBaseTileX/Y` tracks the last triggered base tile to prevent repeated triggers while the tank stands still on a base. Resets to `(-1, -1)` when the tank leaves.
+`lastBaseTileX/Y` tracks the last triggered base to prevent repeated triggers while the tank stands still. Resets to `(-1, -1)` on exit.
 
-Bases do not have a capture mechanic yet — all bases act as friendly resupply regardless of `owner` field.
+### Capture (neutral or enemy base)
+
+Driving over a neutral or enemy base captures it for the local player:
+- Base `owner` set to `0x00` (friendly)
+- Base marker rectangle recolored to team color
+- Sound plays
+- In MP: `networkManager.sendBaseUpdate(index, networkManager.playerId)` broadcasts capture
 
 ---
 
@@ -99,6 +108,7 @@ Bases do not have a capture mechanic yet — all bases act as friendly resupply 
 
 - `library/entities.md` — Builder is a physics sprite; interacts with Pillbox group and groundLayer. Mine placement adds to `mines[]`.
 - `library/map.md` — `setTile()` executes terrain mutations on arrive; `TERRAIN_SPEED` governs soldier speed
+- `library/network.md` — build actions broadcast via NetworkManager in MP
 
 ## Update Triggers
 
@@ -106,5 +116,5 @@ Bases do not have a capture mechanic yet — all bases act as friendly resupply 
 - [ ] New build action added to ActionPanel
 - [ ] Builder speed, timeout, or arrive distance changed
 - [ ] Base resupply amounts or logic changed
-- [ ] Base capture mechanic added
+- [ ] Base capture broadcast event changed
 - [ ] Click handler coordinate logic changed

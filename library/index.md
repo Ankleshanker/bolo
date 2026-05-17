@@ -14,20 +14,17 @@
 
 | Doc | What It Covers | Key Connections |
 |---|---|---|
-| [`scenes.md`](scenes.md) | Scene pipeline, BootScene texture inventory, GameScene init and update order, HUD layout, depth layers | `map.md`, `entities.md`, `builder.md` |
+| [`scenes.md`](scenes.md) | Scene pipeline: BootScene textures, LobbyScene UI/lobby, GameScene init and update order, HUD layout, depth layers | `map.md`, `entities.md`, `builder.md`, `network.md` |
 | [`map.md`](map.md) | Tile definitions, terrain data structure, road bitmask, `.bmap` parsing, `setTile`, wall damage chain | `scenes.md`, `entities.md` |
-| [`entities.md`](entities.md) | Tank stats/movement/death, Pillbox AI/health/capture, BulletManager pool/collisions, mines | `map.md`, `builder.md` |
-| [`builder.md`](builder.md) | Builder soldier state machine, ActionPanel actions and costs, world click handler, base resupply | `entities.md`, `map.md` |
+| [`entities.md`](entities.md) | Tank stats/movement/death, GhostTankManager interpolation, Pillbox AI/health/capture, BulletManager pool/collisions, mines | `map.md`, `builder.md`, `network.md` |
+| [`builder.md`](builder.md) | Builder soldier state machine, ActionPanel actions and costs, world click handler, base resupply and capture | `entities.md`, `map.md`, `network.md` |
+| [`network.md`](network.md) | NetworkManager singleton, GhostTankManager, server architecture, full C2S/S2C event protocol, RoomSettings, kill attribution, win conditions | `scenes.md`, `entities.md` |
 
 ## Infrastructure
 
-*(None yet — add rows here when Vite config, build pipeline, or deploy infrastructure is documented.)*
-
-## Reference
-
-| Doc | What It Covers | Key Connections |
-|---|---|---|
-| [`decisions.md`](decisions.md) | Architectural and design decisions with rationale | All systems |
+| Doc | What It Covers |
+|---|---|
+| [`decisions.md`](decisions.md) | Architectural and design decisions with rationale — includes deployment decisions (Cloudflare Workers, wrangler.jsonc, Lightsail nginx) |
 
 ---
 
@@ -35,10 +32,11 @@
 
 | Doc | Owner / Responsible Role |
 |---|---|
-| `scenes.md` | Agent working on scene pipeline or BootScene textures |
+| `scenes.md` | Agent working on scene pipeline, BootScene textures, LobbyScene UI, or GameScene init |
 | `map.md` | Agent working on map loading, tile types, or terrain mutation |
-| `entities.md` | Agent working on Tank, Pillbox, Bullet, or mine behavior |
+| `entities.md` | Agent working on Tank, Pillbox, Bullet, GhostTankManager, or mine behavior |
 | `builder.md` | Agent working on builder mechanic, ActionPanel, or base logic |
+| `network.md` | Agent working on multiplayer: NetworkManager, server, socket events, lobby, win conditions |
 | `decisions.md` | Any agent making a significant architectural decision |
 | This index | Any agent that adds a new doc |
 

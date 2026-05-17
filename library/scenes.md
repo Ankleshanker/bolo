@@ -3,7 +3,7 @@
 
 ## Overview
 
-Two Phaser scenes run in sequence: `BootScene` generates all textures programmatically and immediately hands off to `GameScene`. `GameScene` owns the live game world — map, entities, input, physics, HUD, and all gameplay systems. There is no menu scene.
+Three Phaser scenes run in sequence: `BootScene` generates all textures and attempts to load map assets, then hands off to `LobbyScene`. `LobbyScene` handles the main menu, multiplayer lobby, and solo setup. `GameScene` owns the live game world — map, entities, input, physics, HUD, and all gameplay systems.
 
 ## Design Intent
 
@@ -13,7 +13,7 @@ All textures are generated at runtime via `Graphics.generateTexture()`. No exter
 
 ## BootScene (`src/scenes/BootScene.ts`)
 
-**Lifecycle:** `preload()` generates all textures and attempts to load `test.bmap`; `create()` calls `this.scene.start('GameScene')`.
+**Lifecycle:** `preload()` generates all textures and loads map binaries; `create()` calls `this.scene.start('LobbyScene')`.
 
 ### Tileset texture (`'tileset'`, key `TILESET_KEY`)
 
@@ -63,48 +63,146 @@ Tile borders: tiles whose fill == border color (Sea, Shallow, Swamp, Forest, Gra
 | `'icon_road'` | 32×32 | ActionPanel buildRoad button preview (E+W road variant) |
 | `'icon_wall'` | 32×32 | ActionPanel buildWall button preview |
 
-### Binary asset
+### Binary assets
 
-`'mapdata'` — attempts `this.load.binary('mapdata', '/maps/test.bmap')`. Load failure logged; GameScene falls back to `generateTestMap()`.
+- `'mapdata'` — `this.load.binary('mapdata', '/maps/test.bmap')`. Load failure logged; GameScene/LobbyScene fall back gracefully.
+- Bundled maps in `public/maps/`: `test.bmap`, `everard-island.bmap`
+
+---
+
+## LobbyScene (`src/scenes/LobbyScene.ts`)
+
+**Lifecycle:** `create()` sets up the UI and registers NetworkManager listeners; `shutdown()` removes them.
+
+The lobby opens on the **Multiplayer** tab by default. All UI is drawn with Phaser primitives (no DOM). Dynamic content is tracked in `dynamicObjs[]` and replaced by `_clearDynamic()` + re-render on state changes.
+
+### Layout
+
+- **Title**: "BOLO" (88px blue) + "ONLINE" (56px red italic), centered as a pair
+- **Subtitle**: "CLASSIC TANK COMBAT" (18px, `#6699bb`)
+- **Tab bar** at `H * 0.27`: SOLO | MULTIPLAYER — both 140×36px, gap 8px
+- **Dynamic area** below tabs: controlled by `mode` (`'solo'|'multi'`) and `view` (`'browse'|'create'|'room'`)
+
+### Solo view (`_renderSolo()`)
+
+Two map-type cards side by side:
+- **Procedural card**: seed display + Randomize button; `_setMapMode(true)` on click
+- **Map File card**: shows file name if loaded, greyed if not; **📁 Upload .bmap** button always present — triggers `_triggerMapUpload()` which opens a native file picker
+- Player name display (read from `localStorage['bolo_player_name']`)
+- **▶ START SOLO** button → `_startSolo()` → `scene.start('GameScene', { useProcedural, seed })`
+
+### Multi browse view (`_renderMultiBrowse()`)
+
+- Public room list (up to 5 rows, click to join)
+- Refresh button → `networkManager.listRooms()`
+- Join-by-code input (6-char, keyboard-driven; `codeInputFocused` flag)
+- **＋ CREATE ROOM** button → `view = 'create'`
+
+### Create room view (`_renderCreate()`)
+
+Fields in order:
+1. **Room name** text input (`nameInputFocused` flag; typing appends to `roomNameInput`)
+2. **Map**: Procedural | Map file buttons. If Map file selected: shows `_triggerMapUpload()` button + filename
+3. **Teams**: FFA | 2 Teams | 4 Teams
+4. **Win**: Timer+Objectives | Domination | Deathmatch
+5. **Friendly Fire**: OFF/ON toggle
+6. **Visibility**: Public/Private toggle
+7. **Max players**: +/− spinner (2–16, default 8)
+8. **Game length**: 5 min | 10 min | 20 min | 30 min buttons (default 10 min)
+9. **✓ CREATE** → `_createRoom()` → `networkManager.createRoom(...)`
+10. **← Back** → `view = 'browse'`, `nameInputFocused = false`
+
+> **Input focus bug (fixed):** `_clearDynamic()` does NOT reset `nameInputFocused` or `codeInputFocused`. Focus is only reset explicitly in `_setMode()` and the Back button handler. Removing these resets from `_clearDynamic()` was necessary because `_renderCreate()` calls `_clearDynamic()` internally, which was killing focus immediately after the pointerdown handler set it.
+
+### Room lobby view (`_renderRoom()`)
+
+- Room code + share link
+- Player list with color dots, "(you)" marker, "(DC)" for disconnected
+- Kick buttons (host only, not self)
+- Settings summary (team mode, win condition, timer, max players, friendly fire)
+- **▶ START GAME** (host only) → `networkManager.startGame()`
+- **← Leave** → `networkManager.leaveRoom()`, return to browse
+
+### Map file upload (`_triggerMapUpload()`)
+
+Creates a hidden `<input type="file" accept=".bmap">` element, reads the selected file as `ArrayBuffer`, stores:
+- In `this.cache.binary` as `'mapdata'` (for solo play in the current session)
+- As base64 in `this.uploadedMapData` (for MP — passed as `settings.mapData` when creating a room)
+- Filename in `this.uploadedMapName` (displayed in UI)
+
+### Keyboard handler
+
+`window.addEventListener('keydown', ...)` registered in `create()`, removed in `shutdown()`. Routes to `nameInputFocused` or `codeInputFocused` text input handling, or Enter/Space to start solo.
+
+### Network listeners
+
+Registered once in `create()`, cleaned up in `_cleanupListeners()` (called from `shutdown()` and before scene transition):
+`roomList`, `roomJoined`, `playerJoined`, `playerRemoved`, `playerGhosted`, `playerReconnected`, `settingsUpdated`, `hostChanged`, `error`, `gameStart`
+
+`gameStart` fires `scene.start('GameScene', { multiplayerMode: true, gameStart: d })`.
 
 ---
 
 ## GameScene (`src/scenes/GameScene.ts`)
 
-**Lifecycle:** `create()` initialises all systems; `update(time, delta)` drives the loop.
+**Lifecycle:** `init(data)` stores `GameSceneInitData`; `create()` initialises all systems; `update(time, delta)` drives the loop; `shutdown()` removes net handlers.
+
+### Init data
+
+```typescript
+interface GameSceneInitData {
+  useProcedural?: boolean;    // solo: use procedural map
+  seed?: number;              // solo: procedural seed
+  multiplayerMode?: boolean;  // true when launched from multiplayer lobby
+  gameStart?: S2C_GameStart;  // MP: server game start payload
+}
+```
 
 ### Initialisation order (`create()`)
 
-1. `loadMapData()` — parse `.bmap` or call `generateTestMap()`
+1. `loadMapData()` — checks `gameStart.settings.mapData` (base64 inline), then Phaser cache `'mapdata'`, then falls back to `generateTestMap(seed)`
 2. `buildTilemap()` — create Phaser tilemap + `groundLayer`, call `initRoadVisuals()`, `renderMapObjects()`
 3. `spawnTank()` — create Tank at `starts[0]`, apply stored team color tint
 4. `new BulletManager` × 2 (`playerBullets`, `pillboxBullets`)
 5. `new PillboxManager` — one Pillbox per `mapData.pills` entry
 6. `new Builder` — with terrain speed callback
-7. `setupCollision()` — all physics colliders and overlaps
-8. `setupCamera()` — `cameras.main` viewport at `(PANEL_WIDTH, 0, W-PANEL_WIDTH, H)`, follows tank, no bounds
-9. `new InputHandler`, `new ActionPanel`, `new SettingsPanel`
-10. `buildHUD()` — HUD text + stat bars; stat bars pushed to `hudPanelObjects[]`
-11. `setupUiCamera()` — creates `uiCam` at `(0,0,PANEL_WIDTH,H)`; tells `cameras.main` to ignore ActionPanel + gear + stat bars; tells `uiCam` to ignore HUD text + minimap
-12. `buildMinimap()` — prerender terrain texture, create `minimapTerrain` sprite + `minimapBlip` graphics
-13. `new SoundManager()`, resume on first pointer/key event
-14. `setupWorldClick()`
+7. If `multiplayerMode`: `new GhostTankManager`, `new BulletManager` (`remoteBullets`)
+8. `setupCollision()` — all physics colliders and overlaps (includes ghost overlap if MP)
+9. `setupCamera()` — `cameras.main` viewport at `(PANEL_WIDTH, 0, W-PANEL_WIDTH, H)`, follows tank
+10. `new InputHandler`, `new ActionPanel`, `new SettingsPanel`
+11. `buildHUD()`, `setupUiCamera()`, `buildMinimap()`
+12. `new SoundManager()`, resume on first pointer/key event
+13. `setupWorldClick()`
+14. `buildTimerHUD()`
+15. If `multiplayerMode`: `setupMultiplayer()`
+
+### `setupMultiplayer()`
+
+1. Adds all existing players (from `networkManager.players`) as ghost tanks except self
+2. If `isHost`: broadcasts all initial pillbox and base states as neutral via `sendPillboxUpdate` / `sendBaseUpdate` — pre-populates server snapshot so domination win condition has full objective count
+3. Registers all net event handlers via `_addNetHandler()` (stored in `_netHandlers[]` for cleanup)
 
 ### Update loop order (per frame)
 
-1. If `dead`: `handleRespawn(delta)`, `soundManager.setEngineSpeed(0)`, `updateMinimap()`, `updateHUD()`, return early
-2. `getTileUnderTank()` → `tileVal`
-3. Sink check: if `tileVal === Sea` and not already sinking → `startSinking()`
-4. If not sinking: movement + fire via `Tank.updateTank()` / `Tank.tryFire()`; fire calls `soundManager.playGunshot()`
-5. `soundManager.setEngineSpeed(speed)`
-6. `tank.sprite.setAlpha(inForest ? 0.65 : 1)` — runs every frame unconditionally
-7. `playerBullets.update(delta)`, `pillboxBullets.update(delta)`
-8. `clearForestUnderBullets()`
-9. `pillboxes.update(delta, tank.x, tank.y, pillboxBullets, inForest, onShot)` — `onShot` calls `soundManager.playPillboxFire()`
-10. `builder.update(delta)`
-11. `checkPillPickup()`, `checkMines()`, `checkBaseInteraction()`
-12. `settingsPanel.update(delta)` — drives name cursor blink
-13. `updateMinimap()`, `updateHUD()`
+1. If `gameOver`: return immediately
+2. SP timer decrement (MP timer driven by `timeUpdate` events from server)
+3. Spectator camera update (MP, dead)
+4. If `dead`: `handleRespawn(delta)`, `updateMinimap()`, `updateHUD()`, return early
+5. `getTileUnderTank()` → `tileVal`
+6. Sea sink check
+7. Movement + fire via `Tank.updateTank()` / `Tank.tryFire()`
+8. `tank.sprite.setAlpha(inForest ? 0.65 : 1)` — unconditional, every frame
+9. `playerBullets.update()`, `pillboxBullets.update()`, `remoteBullets?.update()`
+10. `clearForestUnderBullets()`
+11. `pillboxes.update()`, `builder.update()`, `ghostManager?.update()`
+12. `checkPillPickup()`, `checkMines()`, `checkBaseInteraction()`
+13. `settingsPanel.update(delta)`
+14. `updateMinimap()`, `updateHUD()`
+15. 20 Hz tank state send (MP only): accumulator-gated, emits `sendTankState()`
+
+### `shutdown()`
+
+Iterates `_netHandlers[]` and calls `networkManager.off()` for each registered callback.
 
 ### Two-camera architecture
 
@@ -117,30 +215,25 @@ Tile borders: tiles whose fill == border color (Sea, Shallow, Swamp, Forest, Gra
 
 No `setBounds` on either camera. A 16-tile sea border ensures map tiles always fill the viewport even at the playable edge.
 
+### Spectator mode (MP)
+
+When the local tank dies in MP, `spectatorMode = true`. Q/E keys cycle `spectatorTargetIdx` through `ghostManager.getAlivePlayerIds()`. `cameras.main.startFollow(ghostSprite)` tracks the selected ghost. On respawn, camera re-attaches to local tank.
+
 ### Minimap
 
-- Prerendered 256×256 terrain texture (`'minimap_terrain'`) generated once in `buildMinimap()`: 1px per tile, filled with `MINIMAP_COLORS[displayTile]`
-- `minimapTerrain` sprite: scale 0.5 → 128×128 on screen, positioned at `(screenW - 132 - PANEL_WIDTH, screenH - 132)` relative to cameras.main viewport; repositioned on resize
-- `minimapBlip` graphics: cleared + redrawn each frame — pillbox dots (green/red/grey), base dots (blue/orange), player white circle, border rect
+- Prerendered 256×256 terrain texture (`'minimap_terrain'`) generated once in `buildMinimap()`: 1px per tile
+- `minimapTerrain` sprite: scale 0.5 → 128×128 on screen, bottom-right of game viewport
+- `minimapBlip` graphics: cleared + redrawn each frame — pillbox dots (green/red/grey), base dots (blue/orange), ghost player dots (team color), local player white circle, border rect
 - Both ignored by `uiCam`
-
-### Settings panel (`src/ui/SettingsPanel.ts`)
-
-- Gear icon (⚙) at bottom of uiCam area; owned by uiCam via `gearObjects[]`
-- Click gear → full-screen modal overlay (scrollFactor 0, depth 50–53) rendered by cameras.main
-- Modal contains: seed (`CURRENT_SEED`), player name text entry (Phaser keyboard capture, stored in `localStorage['bolo_player_name']`), team color swatches (stored as `localStorage['bolo_team_color']`, applied as tank sprite tint at spawn), Phase 6/7 placeholder sections
-- ESC closes the panel; world clicks blocked while open
 
 ### HUD layout
 
-- **Top-left of viewport** (cameras.main, depth 30, scrollFactor 0, `object.x=6`): speed + terrain + action state text
-- **Left panel (0–100px)** (uiCam): ActionPanel buttons (depth 20–22), stat bars (depth 22–23), gear button (depth 21–22)
-- **Stat bars** — start at y=512, stride 26px, bar width 69px:
-  - Row 0: HP (`icon_shield`, green `0x44cc44`)
-  - Row 1: Shells (`icon_shell`, yellow `0xffdd44`)
-  - Row 2: Mines (`mine`, red `0xcc4433`)
-  - Row 3: Trees (`icon_wood`, brown `0x7a5230`)
-- **Minimap** — bottom-right of game viewport, 128×128, depth 90–91
+- **Top-left of viewport** (cameras.main, depth 30, scrollFactor 0): speed + terrain + action state text
+- **Left panel (0–100px)** (uiCam): ActionPanel buttons, stat bars, gear button
+- **Stat bars** — start at y=512, stride 26px: HP (green), Shells (yellow), Mines (red), Trees (brown)
+- **Kill feed** — bottom-right toast notifications (depth 31), timed removal
+- **Timer** — top-center of game viewport
+- **Minimap** — bottom-right, 128×128, depth 90–91
 
 ### Depth layer assignments
 
@@ -151,21 +244,23 @@ No `setBounds` on either camera. A 16-tile sea border ensures map tiles always f
 | 2 | Base markers, start markers |
 | 3 | Pillbox sprites |
 | 4 | Pill crack overlays, pill pickup icons |
-| 5 | Tank sprite |
+| 5 | Tank sprite, ghost tank sprites |
 | 7 | Builder soldier |
 | 8 | Explosion sprites |
 | 20–23 | ActionPanel UI (uiCam) |
 | 21–22 | Settings gear button (uiCam) |
 | 22–23 | Stat bars (uiCam) |
 | 30 | HUD text (cameras.main) |
+| 31 | Kill feed (cameras.main) |
 | 50–53 | Settings modal overlay (cameras.main) |
 | 90–91 | Minimap terrain + blip (cameras.main) |
 
 ## Connects To
 
 - `library/map.md` — tile types, terrain data, road bitmask
-- `library/entities.md` — Tank, Pillbox, Bullet, mine details
+- `library/entities.md` — Tank, Pillbox, Bullet, mine, GhostTankManager details
 - `library/builder.md` — Builder soldier, ActionPanel actions
+- `library/network.md` — NetworkManager, multiplayer event protocol
 
 ## Update Triggers
 
@@ -175,3 +270,5 @@ No `setBounds` on either camera. A 16-tile sea border ensures map tiles always f
 - [ ] Camera or viewport configuration changed
 - [ ] HUD layout changed
 - [ ] Initialisation order changed
+- [ ] LobbyScene views or fields changed
+- [ ] Map upload flow changed
