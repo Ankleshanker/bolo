@@ -784,6 +784,7 @@ export class GameScene extends Phaser.Scene {
     this.tank.shells = 200;
     this.tank.alive  = true;
     this.dead = false;
+    this.soundManager.playTankRespawn();
 
     if (this.multiplayerMode) {
       this.spectatorMode = false;
@@ -1159,6 +1160,7 @@ export class GameScene extends Phaser.Scene {
       const pty = Math.floor(pickup.y / TILE_SIZE);
       if (ptx === tx && pty === ty) {
         this.tank.pillsCarried = 1;
+        this.soundManager.playPillPickup();
         pickup.destroy();
         this.pillPickups.splice(i, 1);
         break;
@@ -1262,6 +1264,7 @@ export class GameScene extends Phaser.Scene {
         this.tank.shells = 200;
         this.tank.health = Math.min(10, this.tank.health + 5);
         this.tank.mines  = Math.min(20, this.tank.mines + 5);
+        this.soundManager.playBaseResupply();
       }
       return;
     }

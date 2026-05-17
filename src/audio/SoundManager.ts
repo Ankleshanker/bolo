@@ -17,6 +17,9 @@ export class SoundManager {
   private building:      AudioBuffer | null = null;
   private harvestTrees:  AudioBuffer | null = null;
   private mineExp:       AudioBuffer | null = null;
+  private baseResupply:  AudioBuffer | null = null;
+  private pillPickup:    AudioBuffer | null = null;
+  private tankRespawn:   AudioBuffer | null = null;
   private bulletHits:    (AudioBuffer | null)[] = Array(7).fill(null);
 
   constructor() {
@@ -85,6 +88,18 @@ export class SoundManager {
   }
 
   // ── Builder actions ───────────────────────────────────────────────────────
+
+  playBaseResupply() {
+    this._playBuffer(this.baseResupply, 0);
+  }
+
+  playPillPickup() {
+    this._playBuffer(this.pillPickup, 0);
+  }
+
+  playTankRespawn() {
+    this._playBuffer(this.tankRespawn, 0);
+  }
 
   playChopTree(dist = 0) {
     this._playBuffer(this.harvestTrees, dist);
@@ -163,13 +178,17 @@ export class SoundManager {
       }
     };
 
-    const [tankFire, pillboxFire, building, harvestTrees, mineExp, ...hits] =
+    const [tankFire, pillboxFire, building, harvestTrees, mineExp,
+           baseResupply, pillPickup, tankRespawn, ...hits] =
       await Promise.all([
         load('/sfx/tank_fire.ogg'),
         load('/sfx/pillbox_fire.ogg'),
         load('/sfx/building.ogg'),
         load('/sfx/harvest_trees.ogg'),
         load('/sfx/mine.ogg'),
+        load('/sfx/base_resupply.ogg'),
+        load('/sfx/pill_pickup.ogg'),
+        load('/sfx/tank_respawn.ogg'),
         ...Array.from({ length: 7 }, (_, i) =>
           load(`/sfx/bullet_hit_0${i + 1}.ogg`),
         ),
@@ -180,6 +199,9 @@ export class SoundManager {
     this.building     = building;
     this.harvestTrees = harvestTrees;
     this.mineExp      = mineExp;
+    this.baseResupply = baseResupply;
+    this.pillPickup   = pillPickup;
+    this.tankRespawn  = tankRespawn;
     this.bulletHits   = hits;
   }
 
