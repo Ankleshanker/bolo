@@ -25,6 +25,10 @@ A browser-based clone of the 1987/1993 classic Bolo. 2D tile-based tank combat o
 - [x] Phase 6 — Multiplayer: lobby, rooms, ghost tanks, bullet sync, world state sync, win conditions, spectator, disconnect grace, kill feed
 - [~] Phase 7 — Polish: minimap ✓, sound ✓, base capture ✓, organic map generator ✓, settings UI ✓, map file upload ✓; pixel art pass remaining
 
+## Library Maintenance
+
+After completing any task that changes a system, update the relevant library doc before closing. Check that doc's `Update Triggers` section as a checklist. If a new system is introduced, create a new doc and add it to `library/index.md` and the routing table below.
+
 ## Library Routing
 
 | System | Doc |
