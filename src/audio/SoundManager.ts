@@ -216,7 +216,8 @@ export class SoundManager {
         const res = await fetch(path);
         const ab  = await res.arrayBuffer();
         return await this.ctx.decodeAudioData(ab);
-      } catch {
+      } catch (e) {
+        console.error(`[SoundManager] failed to load ${path}:`, e);
         return null;
       }
     };
