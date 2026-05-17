@@ -253,8 +253,9 @@ When the local tank dies in MP, `spectatorMode = true`. Q/E keys cycle `spectato
 | 22–23 | Stat bars (uiCam) |
 | 30 | HUD text (cameras.main) |
 | 31 | Kill feed (cameras.main) |
-| 33 | Chyron background strip (cameras.main) |
-| 34 | Chyron scrolling text (cameras.main) |
+| 33 | Chyron background strip (both cameras — full-screen coverage) |
+| 34 | Chyron top-border accent line (both cameras) |
+| 35 | Chyron scrolling text (cameras.main only) |
 | 50–53 | Settings modal overlay (cameras.main) |
 | 90–91 | Minimap terrain + blip (cameras.main) |
 
