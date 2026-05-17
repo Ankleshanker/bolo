@@ -234,6 +234,7 @@ When the local tank dies in MP, `spectatorMode = true`. Q/E keys cycle `spectato
 - **Kill feed** — bottom-right toast notifications (depth 31), timed removal
 - **Timer** — top-center of game viewport
 - **Minimap** — bottom-right, 128×128, depth 90–91
+- **Chyron** — full-viewport-width scrolling ticker anchored to screen bottom (depth 33–34). Created in `buildHUD()`; ignored by `uiCam`. Events: player joined/left, tank destroyed, pillbox destroyed, base claimed, drowned, mine hit.
 
 ### Depth layer assignments
 
@@ -252,6 +253,8 @@ When the local tank dies in MP, `spectatorMode = true`. Q/E keys cycle `spectato
 | 22–23 | Stat bars (uiCam) |
 | 30 | HUD text (cameras.main) |
 | 31 | Kill feed (cameras.main) |
+| 33 | Chyron background strip (cameras.main) |
+| 34 | Chyron scrolling text (cameras.main) |
 | 50–53 | Settings modal overlay (cameras.main) |
 | 90–91 | Minimap terrain + blip (cameras.main) |
 
