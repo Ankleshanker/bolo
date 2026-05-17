@@ -1,14 +1,23 @@
 /**
- * Web Audio API sound manager — all sounds synthesised procedurally, no audio files.
+ * Sound manager — file-based SFX with Web Audio API distance attenuation.
  * AudioContext starts suspended (browser policy); call resume() on the first user gesture.
  *
  * Every public play* method accepts an optional dist parameter (0 = at player, 1 = far).
  * Distance attenuates gain and rolls off high frequencies, mimicking near/far variants.
+ *
+ * Sounds without a file (explosion, tank sinking, lay mine) remain procedurally synthesised.
  */
 export class SoundManager {
   private ctx:    AudioContext;
   private master: GainNode;
   private readonly enabled: boolean;
+
+  private tankFire:      AudioBuffer | null = null;
+  private pillboxFire:   AudioBuffer | null = null;
+  private building:      AudioBuffer | null = null;
+  private harvestTrees:  AudioBuffer | null = null;
+  private mineExp:       AudioBuffer | null = null;
+  private bulletHits:    (AudioBuffer | null)[] = Array(7).fill(null);
 
   constructor() {
     try {
@@ -17,6 +26,7 @@ export class SoundManager {
       this.master.gain.value = 0.35;
       this.master.connect(this.ctx.destination);
       this.enabled = true;
+      this._loadAll();
     } catch {
       this.enabled = false;
       this.ctx     = null!;
@@ -31,17 +41,11 @@ export class SoundManager {
   // ── Shooting ──────────────────────────────────────────────────────────────
 
   playGunshot(dist = 0) {
-    if (!this.enabled) return;
-    const out = this._out(dist);
-    this._noiseTo(0.08, 2800, 0.4, 0.55, 'bandpass', out);
-    this._noiseTo(0.04, 110,  1.0, 0.40, 'lowpass',  out);
+    this._playBuffer(this.tankFire, dist);
   }
 
   playPillboxFire(dist = 0) {
-    if (!this.enabled) return;
-    const out = this._out(dist);
-    this._noiseTo(0.07, 2000, 0.45, 0.35, 'bandpass', out);
-    this._noiseTo(0.03, 95,   1.0,  0.25, 'lowpass',  out);
+    this._playBuffer(this.pillboxFire, dist);
   }
 
   // ── Explosions ────────────────────────────────────────────────────────────
@@ -63,92 +67,33 @@ export class SoundManager {
   }
 
   playMineExplosion(dist = 0) {
-    if (!this.enabled) return;
-    const now = this.ctx.currentTime;
-    const out = this._out(dist);
-    this._noiseTo(0.32, 1300, 0.28, 0.55, 'lowpass', out);
-    const osc  = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(130, now);
-    osc.frequency.exponentialRampToValueAtTime(22, now + 0.28);
-    gain.gain.setValueAtTime(0.42, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
-    osc.connect(gain); gain.connect(out);
-    osc.start(now); osc.stop(now + 0.28);
+    this._playBuffer(this.mineExp, dist);
   }
 
   // ── Bullet impacts ────────────────────────────────────────────────────────
 
-  /** Bullet hits the player's own tank. */
   playHitTank(dist = 0) {
-    if (!this.enabled) return;
-    const now = this.ctx.currentTime;
-    const out = this._out(dist);
-    const osc  = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(540, now);
-    osc.frequency.exponentialRampToValueAtTime(160, now + 0.14);
-    gain.gain.setValueAtTime(0.45, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
-    osc.connect(gain); gain.connect(out);
-    osc.start(now); osc.stop(now + 0.16);
-    this._noiseTo(0.06, 2200, 1.2, 0.18, 'bandpass', out);
+    this._playBuffer(this._randomBulletHit(), dist);
   }
 
-  /** Bullet hits a wall or rubble tile. */
   playHitBuilding(dist = 0) {
-    if (!this.enabled) return;
-    const out = this._out(dist);
-    this._noiseTo(0.13, 260, 0.7, 0.50, 'lowpass',  out);
-    this._noiseTo(0.05, 950, 1.5, 0.20, 'bandpass', out);
+    this._playBuffer(this._randomBulletHit(), dist);
   }
 
-  /** Bullet hits a forest tile. */
   playHitTree(dist = 0) {
-    if (!this.enabled) return;
-    const out = this._out(dist);
-    this._noiseTo(0.10, 1100, 1.2, 0.35, 'bandpass', out);
-    this._noiseTo(0.06, 380,  0.8, 0.20, 'lowpass',  out);
+    this._playBuffer(this._randomBulletHit(), dist);
   }
 
   // ── Builder actions ───────────────────────────────────────────────────────
 
-  /** Builder harvests a tree tile (axe chop). */
   playChopTree(dist = 0) {
-    if (!this.enabled) return;
-    const now = this.ctx.currentTime;
-    const out = this._out(dist);
-    this._noiseTo(0.07, 1500, 1.0, 0.42, 'bandpass', out);
-    const osc  = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(210, now);
-    osc.frequency.exponentialRampToValueAtTime(75, now + 0.065);
-    gain.gain.setValueAtTime(0.28, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
-    osc.connect(gain); gain.connect(out);
-    osc.start(now); osc.stop(now + 0.07);
+    this._playBuffer(this.harvestTrees, dist);
   }
 
-  /** Builder places a road, wall, or pillbox tile. */
   playBuildTile(dist = 0) {
-    if (!this.enabled) return;
-    const now = this.ctx.currentTime;
-    const out = this._out(dist);
-    const osc  = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(320, now);
-    osc.frequency.exponentialRampToValueAtTime(180, now + 0.07);
-    gain.gain.setValueAtTime(0.18, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
-    osc.connect(gain); gain.connect(out);
-    osc.start(now); osc.stop(now + 0.07);
+    this._playBuffer(this.building, dist);
   }
 
-  /** Builder places a mine (metallic click). */
   playLayMine(dist = 0) {
     if (!this.enabled) return;
     const now = this.ctx.currentTime;
@@ -167,13 +112,11 @@ export class SoundManager {
 
   // ── Tank sinking ──────────────────────────────────────────────────────────
 
-  /** Plays a ~900ms descending gurgle + bubbling as the tank sinks into sea. */
   playTankSinking(dist = 0) {
     if (!this.enabled) return;
     const now = this.ctx.currentTime;
     const out = this._out(dist);
 
-    // Descending sawtooth — engine dying
     const osc  = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'sawtooth';
@@ -184,7 +127,6 @@ export class SoundManager {
     osc.connect(gain); gain.connect(out);
     osc.start(now); osc.stop(now + 0.9);
 
-    // Bubble pops — 5 staggered bandpass noise bursts
     for (let i = 0; i < 5; i++) {
       const t = now + i * 0.15 + Math.random() * 0.04;
       const bGain = this.ctx.createGain();
@@ -210,11 +152,52 @@ export class SoundManager {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
-  /**
-   * Create a gain+filter chain that models distance attenuation.
-   * Near (dist≈0): full volume, full bandwidth.
-   * Far (dist≈1): quiet, heavily low-pass filtered.
-   */
+  private async _loadAll() {
+    const load = async (path: string): Promise<AudioBuffer | null> => {
+      try {
+        const res = await fetch(path);
+        const ab  = await res.arrayBuffer();
+        return await this.ctx.decodeAudioData(ab);
+      } catch {
+        return null;
+      }
+    };
+
+    const [tankFire, pillboxFire, building, harvestTrees, mineExp, ...hits] =
+      await Promise.all([
+        load('/sfx/tank_fire.ogg'),
+        load('/sfx/pillbox_fire.ogg'),
+        load('/sfx/building.ogg'),
+        load('/sfx/harvest_trees.ogg'),
+        load('/sfx/mine.ogg'),
+        ...Array.from({ length: 7 }, (_, i) =>
+          load(`/sfx/bullet_hit_0${i + 1}.ogg`),
+        ),
+      ]);
+
+    this.tankFire     = tankFire;
+    this.pillboxFire  = pillboxFire;
+    this.building     = building;
+    this.harvestTrees = harvestTrees;
+    this.mineExp      = mineExp;
+    this.bulletHits   = hits;
+  }
+
+  private _randomBulletHit(): AudioBuffer | null {
+    const loaded = this.bulletHits.filter(b => b !== null);
+    if (loaded.length === 0) return null;
+    return loaded[Math.floor(Math.random() * loaded.length)];
+  }
+
+  private _playBuffer(buffer: AudioBuffer | null, dist: number) {
+    if (!this.enabled || !buffer) return;
+    const out = this._out(dist);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(out);
+    src.start();
+  }
+
   private _out(dist: number): AudioNode {
     const gain = this.ctx.createGain();
     gain.gain.value = Math.max(0.04, 1 - dist * 0.88);
@@ -230,7 +213,6 @@ export class SoundManager {
     return gain;
   }
 
-  /** White-noise burst routed through a biquad filter to a destination node. */
   private _noiseTo(
     dur:        number,
     freq:       number,
