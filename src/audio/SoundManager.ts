@@ -101,6 +101,49 @@ export class SoundManager {
     this._playBuffer(this.tankRespawn, 0);
   }
 
+  playBoatEnter() {
+    if (!this.enabled) return;
+    const now = this.ctx.currentTime;
+    const out = this._out(0);
+    this._noiseTo(0.12, 320, 0.5, 0.45, 'lowpass', out);
+    this._noiseTo(0.06, 900, 1.2, 0.18, 'bandpass', out);
+    const osc  = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(180, now);
+    osc.frequency.exponentialRampToValueAtTime(60, now + 0.18);
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    osc.connect(gain); gain.connect(out);
+    osc.start(now); osc.stop(now + 0.18);
+  }
+
+  playBoatExit() {
+    if (!this.enabled) return;
+    const out = this._out(0);
+    this._noiseTo(0.10, 380, 0.6, 0.35, 'lowpass',  out);
+    this._noiseTo(0.05, 700, 1.4, 0.14, 'bandpass', out);
+  }
+
+  playGameOver() {
+    if (!this.enabled) return;
+    const now = this.ctx.currentTime;
+    const out = this._out(0);
+    const notes = [330, 262, 220, 165];
+    notes.forEach((freq, i) => {
+      const t    = now + i * 0.22;
+      const osc  = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.38, t + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.30);
+      osc.connect(gain); gain.connect(out);
+      osc.start(t); osc.stop(t + 0.30);
+    });
+  }
+
   playChopTree(dist = 0) {
     this._playBuffer(this.harvestTrees, dist);
   }

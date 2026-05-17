@@ -901,6 +901,7 @@ export class GameScene extends Phaser.Scene {
 
   private triggerGameOver() {
     this.gameOver = true;
+    this.soundManager.playGameOver();
     this.tank.body.setVelocity(0, 0);
     this.tank.body.enable = false;
     const score  = this.countScore();
@@ -933,6 +934,7 @@ export class GameScene extends Phaser.Scene {
   private triggerGameOverMP(d: S2C_GameOver) {
     if (this.gameOver) return;
     this.gameOver = true;
+    this.soundManager.playGameOver();
     if (!this.dead) {
       this.tank.body.setVelocity(0, 0);
       this.tank.body.enable = false;
@@ -1129,12 +1131,14 @@ export class GameScene extends Phaser.Scene {
       } else {
         this.inBoat     = false;
         this.activeBoat = null;
+        this.soundManager.playBoatExit();
       }
     } else if (!this.inBoat) {
       for (const boat of this.boats) {
         if (boat.tileX === tx && boat.tileY === ty) {
           this.inBoat     = true;
           this.activeBoat = boat;
+          this.soundManager.playBoatEnter();
           break;
         }
       }
