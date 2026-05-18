@@ -166,6 +166,15 @@
 
 ---
 
+## Active Games list shows all rooms; private lock is cosmetic — 2026-05-18
+
+**Decision:** `LobbyManager.listAllActiveRooms()` returns every non-ended room regardless of `settings.isPublic`. The 🔒/🔓 icon in the lobby table is a visual indicator only — the server's `joinRoom` handler has no `isPublic` enforcement gate.
+**Why:** The primary use-case for the Active Games list is spectating / late-joining in-progress games, where host intent about "publicness" matters less than discoverability. Enforcing access at the list level would hide PLAYING private rooms from players who have a code. Enforcing it at the join level would be a meaningful gameplay lock — that's a deliberate future decision, not a default.
+**Critical:** Do not add `if (!room.settings.isPublic) return;` to the `joinRoom` handler thinking you're "fixing" an oversight. That would break late-join for private rooms. If access control is desired, the correct design is: require a correct password/code to join, checked server-side; the list can still show the room.
+**Applies to:** `server/src/LobbyManager.ts` (`listAllActiveRooms`), `server/src/index.ts` (`joinRoom` handler), `src/scenes/LobbyScene.ts` (`_renderMultiBrowse`).
+
+---
+
 ## Cloudflare Workers Assets for client hosting — 2026-05-17
 
 **Decision:** The client SPA is deployed as Cloudflare Workers Assets (via `npx wrangler deploy`) with a `wrangler.jsonc` config file. Not GitHub Pages; not Cloudflare Pages static hosting.

@@ -72,15 +72,20 @@ Tile borders: tiles whose fill == border color (Sea, Shallow, Swamp, Forest, Gra
 
 ## LobbyScene (`src/scenes/LobbyScene.ts`)
 
-**Lifecycle:** `create()` sets up the UI and registers NetworkManager listeners; `shutdown()` removes them.
+**Lifecycle:** `create()` calls `_buildPermanent()` + `_renderCurrentView()`, registers a `scale 'resize'` listener, and registers NetworkManager listeners. `shutdown()` removes all listeners and calls `scale.off('resize')`.
 
-The lobby opens on the **Multiplayer** tab by default. All UI is drawn with Phaser primitives (no DOM). Dynamic content is tracked in `dynamicObjs[]` and replaced by `_clearDynamic()` + re-render on state changes.
+The lobby opens on the **Multiplayer** tab by default. All UI is drawn with Phaser primitives (no DOM). Two object pools are maintained:
+
+- **`permanentObjs[]`** — background, grid, title, tabs. Built once by `_buildPermanent()`; destroyed and rebuilt wholesale on every window resize.
+- **`dynamicObjs[]`** — the current view's content. Rebuilt by `_clearDynamic()` + re-render on any state change or resize. Clearing `dynamicObjs` also cancels `refreshTimer` if active.
+
+On resize, `this.W/H/cx` are updated, `_clearPermanent()` + `_buildPermanent()` regenerates the chrome, then `_renderCurrentView()` dispatches to the correct view renderer.
 
 ### Layout
 
 - **Title**: "BOLO" (88px blue) + "ONLINE" (56px red italic), centered as a pair
 - **Subtitle**: "CLASSIC TANK COMBAT" (18px, `#6699bb`)
-- **Tab bar** at `H * 0.27`: SOLO | MULTIPLAYER — both 140×36px, gap 8px
+- **Tab bar** at `H * 0.27`: MULTIPLAYER (left, default active) | SOLO (right) — both 140×36px, gap 8px
 - **Dynamic area** below tabs: controlled by `mode` (`'solo'|'multi'`) and `view` (`'browse'|'create'|'room'`)
 
 ### Solo view (`_renderSolo()`)
@@ -93,10 +98,27 @@ Two map-type cards side by side:
 
 ### Multi browse view (`_renderMultiBrowse()`)
 
-- Public room list (up to 5 rows, click to join)
-- Refresh button → `networkManager.listRooms()`
-- Join-by-code input (6-char, keyboard-driven; `codeInputFocused` flag)
-- **＋ CREATE ROOM** button → `view = 'create'`
+Top-to-bottom order:
+1. **Join-by-code** — 6-char input (keyboard-driven; `codeInputFocused` flag) + JOIN button
+2. **＋ CREATE ROOM** button → `view = 'create'`
+3. **ACTIVE GAMES** table — all non-ended rooms (public and private), up to 5 rows
+
+The table auto-refreshes every 5 s via a looping `Phaser.Time.TimerEvent` stored in `refreshTimer`. The timer is created at the end of `_renderMultiBrowse()` and cancelled automatically whenever `_clearDynamic()` runs (mode switch, view change, resize).
+
+**Table columns** — x positions are proportional to `listW = W - 80` so they hold correct alignment on resize:
+
+| Column | Content | x anchor |
+|---|---|---|
+| ROOM | `room.name` | `listLeft + 8`, left |
+| PLAYERS | `playerCount/maxPlayers` | `listLeft + listW * 0.42`, center |
+| TEAMS | FFA / 2v2 / 4-way | `listLeft + listW * 0.54`, center |
+| MODE | Timer / Dom. / DM | `listLeft + listW * 0.66`, center |
+| ACCESS | 🔒 / 🔓 | `listLeft + listW * 0.80`, center |
+| TIME | MM:SS for PLAYING, "Lobby" for LOBBY | `listLeft + listW - 8`, right |
+
+`timeRemainingMs` is sourced from `RoomSummary.timeRemainingMs`, which `GameRoom.getSummary()` derives from `this.timerMs` (remaining ms, decremented live by `tick()`). For LOBBY rooms it is `timerSeconds * 1000` (the configured full duration).
+
+> **Access control note:** The 🔒 icon is cosmetic only. The server's `joinRoom` handler does not check `isPublic` — any room visible in the list can be joined by clicking the row, regardless of lock status.
 
 ### Create room view (`_renderCreate()`)
 
