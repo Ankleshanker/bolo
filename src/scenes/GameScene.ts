@@ -93,6 +93,8 @@ export class GameScene extends Phaser.Scene {
   private _sinking      = false;
   private lastBaseTileX = -1;
   private lastBaseTileY = -1;
+  private _mineDropTileX = -1;
+  private _mineDropTileY = -1;
 
   // Timer / game over
   private gameTimer    = GAME_DURATION_MS;
@@ -137,6 +139,8 @@ export class GameScene extends Phaser.Scene {
     this.killFeedObjs    = [];
     this._netHandlers    = [];
     this.playerNames     = new Map();
+    this._mineDropTileX  = -1;
+    this._mineDropTileY  = -1;
   }
 
   create() {
@@ -200,6 +204,8 @@ export class GameScene extends Phaser.Scene {
     this.chyron.update(delta);
 
     if (this.dead) {
+      this._mineDropTileX = -1;
+      this._mineDropTileY = -1;
       this.handleRespawn(delta);
       this.updateMinimap();
       this.updateHUD();
@@ -218,6 +224,18 @@ export class GameScene extends Phaser.Scene {
       const onWater = tileVal === DisplayTile.Sea || tileVal === DisplayTile.Shallow;
       const terrainSpeed = (this.inBoat && onWater) ? 1.0 : (TERRAIN_SPEED[tileVal] ?? 1.0);
       this.tank.updateTank(delta, state, terrainSpeed);
+
+      // SHIFT mine-drop: lay a mine on the tile just vacated when moving
+      const cx = this.tank.tileX;
+      const cy = this.tank.tileY;
+      if (this._mineDropTileX !== -1 && (cx !== this._mineDropTileX || cy !== this._mineDropTileY)) {
+        if (state.layMine) {
+          this.placeMineAt(this._mineDropTileX, this._mineDropTileY);
+        }
+      }
+      this._mineDropTileX = cx;
+      this._mineDropTileY = cy;
+
       if (state.fire) {
         const shot = this.tank.tryFire(delta);
         if (shot) {
@@ -1187,10 +1205,7 @@ export class GameScene extends Phaser.Scene {
         if (tile === DisplayTile.Sea) return;
         t.mines--;
         this.dispatchSoldier(tileX, tileY, () => {
-          const sprite = this.add.sprite(
-            (tileX + 0.5) * TILE_SIZE, (tileY + 0.5) * TILE_SIZE, 'mine',
-          ).setDepth(1);
-          this.mines.push({ tileX, tileY, sprite });
+          this._spawnMineSprite(tileX, tileY);
           if (this.multiplayerMode) networkManager.sendMineAdded(tileX, tileY);
         }, (dist) => this.soundManager.playLayMine(dist));
         break;
@@ -1278,6 +1293,26 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  private _spawnMineSprite(tileX: number, tileY: number) {
+    const sprite = this.add.sprite(
+      (tileX + 0.5) * TILE_SIZE, (tileY + 0.5) * TILE_SIZE, 'mine',
+    ).setDepth(1);
+    this.mines.push({ tileX, tileY, sprite });
+  }
+
+  private placeMineAt(tileX: number, tileY: number) {
+    if (this.tank.mines <= 0) return;
+    const tile = this.mapData.terrain[tileY]?.[tileX] ?? DisplayTile.Sea;
+    if (tile === DisplayTile.Sea) return;
+    if (this.mines.some(m => m.tileX === tileX && m.tileY === tileY)) return;
+    this.tank.mines--;
+    this._spawnMineSprite(tileX, tileY);
+    this.soundManager.playLayMine(this.soundDist(
+      (tileX + 0.5) * TILE_SIZE, (tileY + 0.5) * TILE_SIZE,
+    ));
+    if (this.multiplayerMode) networkManager.sendMineAdded(tileX, tileY);
   }
 
   private checkMines() {
