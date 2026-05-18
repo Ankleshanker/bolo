@@ -6,6 +6,7 @@ export interface InputState {
   turnLeft:    boolean;
   turnRight:   boolean;
   fire:        boolean;
+  layMine:     boolean;
 }
 
 export class InputHandler {
@@ -14,16 +15,18 @@ export class InputHandler {
   private s: Phaser.Input.Keyboard.Key;
   private a: Phaser.Input.Keyboard.Key;
   private d: Phaser.Input.Keyboard.Key;
+  private shift: Phaser.Input.Keyboard.Key;
   private _fireHeld = false; // event-driven so startup key state doesn't bleed in
 
   constructor(scene: Phaser.Scene) {
     this.cursors = scene.input.keyboard!.createCursorKeys();
     const kb = scene.input.keyboard!;
     const K  = Phaser.Input.Keyboard.KeyCodes;
-    this.w = kb.addKey(K.W);
-    this.s = kb.addKey(K.S);
-    this.a = kb.addKey(K.A);
-    this.d = kb.addKey(K.D);
+    this.w     = kb.addKey(K.W);
+    this.s     = kb.addKey(K.S);
+    this.a     = kb.addKey(K.A);
+    this.d     = kb.addKey(K.D);
+    this.shift = kb.addKey(K.SHIFT);
 
     kb.on('keydown-SPACE', () => { this._fireHeld = true;  });
     kb.on('keyup-SPACE',   () => { this._fireHeld = false; });
@@ -36,6 +39,7 @@ export class InputHandler {
       turnLeft:  this.cursors.left.isDown  || this.a.isDown,
       turnRight: this.cursors.right.isDown || this.d.isDown,
       fire:      this._fireHeld,
+      layMine:   this.shift.isDown,
     };
   }
 }
