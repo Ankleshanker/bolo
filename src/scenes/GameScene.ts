@@ -166,9 +166,9 @@ export class GameScene extends Phaser.Scene {
 
   create() {
     this.mapData        = this.loadMapData();
+    this.baseGroup      = this.physics.add.group();
     this.buildTilemap();
     this.spawnTank();
-    this.baseGroup      = this.physics.add.group();
     this.playerBullets  = new BulletManager(this);
     this.pillboxBullets = new BulletManager(this);
     this.pillboxes      = new PillboxManager(this, this.mapData.pills);
