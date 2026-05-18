@@ -89,11 +89,11 @@ Actions queue is one deep — if the builder is busy, the click is silently disc
 
 ### Base states
 
-| `owner` | Color | Meaning |
+| `owner` | Full-HP color | Meaning |
 |---|---|---|
 | `0xFF` | White | Neutral — HP=0, drive over to capture |
 | `0x00` | Team color | Friendly — refuels tank while parked |
-| `0x01` | Red | Enemy — must shoot to HP 0 before capturing |
+| `0x01` | Red (`0xff4444`) | Enemy — must shoot to HP 0 before capturing |
 
 ### HP system
 
@@ -102,6 +102,7 @@ Actions queue is one deep — if the builder is busy, the click is silently disc
 - Capturing sets HP to `BASE_MAX_HEALTH` and resets supplies to 0.
 - Player bullets overlap an invisible physics sprite per base (`baseGroup`). Hitting an enemy/neutral-owned base decrements `baseHealth[i]`; at 0 → base goes neutral (white).
 - Own team's base cannot be damaged by bullets.
+- **Color indicator:** The base rect color lerps from the full team/enemy color toward white as HP decreases. `_baseRectColor(ownerCode, health)` does a per-channel RGB lerp: `t = (MAX_HEALTH − health) / MAX_HEALTH`, blending `full` → `0xffffff`. Full HP = solid team/enemy color; 0 HP = white.
 
 ### Supply system
 
@@ -117,6 +118,7 @@ While tank is parked on a friendly base, `checkBaseInteraction(delta)` accumulat
 - Shells: give `min(10, floor(base.shells), 200 − tank.shells)` from base supply.
 - Mines: give `min(1, floor(base.mines), 20 − tank.mines)` from base supply.
 - Plays resupply sound if anything was transferred.
+- In MP: if anything was transferred, broadcasts `sendBaseUpdate(idx, ownerId, health, shells, mines)` so all clients stay in sync on supply levels.
 
 `lastBaseTileX/Y` still tracks current base; `baseRefuelAccum` resets to 0 when the tank leaves.
 

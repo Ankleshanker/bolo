@@ -116,9 +116,14 @@
 ## Base HP, supply, and combat recapture — 2026-05-18
 
 **Decision:** Bases now require combat to recapture: each owned base has `BASE_MAX_HEALTH = 4` HP tracked in `baseHealth[]`. Player bullets hitting an enemy base decrement HP via a `physics.add.overlap` on an invisible physics sprite group (`baseGroup`). At 0 HP the base turns neutral (white). Neutral bases are still captured by driving over them. Supply (`base.shells` 0–90, `base.mines` 0–20) replenishes over 5 minutes and is drawn down by the continuous-parking refuel (1-second ticks). Newly captured bases start with 0 supply.
+
+**Color indicator:** The base rect lerps from full team/enemy color toward white as HP decreases (`_baseRectColor` helper, per-channel RGB lerp). At full HP the rect shows the owner's color; at 0 HP it's white. This runs on every damage event, capture, neutralize, and network sync.
+
+**Supply sync (MP):** `_doBaseRefuel` broadcasts `sendBaseUpdate` after each successful refuel tick. This prevents long-running games from diverging when shells/mines are drawn faster than the 5-minute replenish rate. Client-independent replenishment still runs locally; the broadcast corrects drift once per second per parked player.
+
 **Why:** Aligns gameplay with the original Bolo mechanic: bases have strategic value requiring defense, not just conquest. Supply scarcity and the 5-minute replenish window add resource pressure.
-**Alternatives rejected:** Separate physics sprites for base bodies (considered using a `staticGroup`) — a regular dynamic group with `setImmovable(true)` is simpler and the performance difference is negligible at ≤8 bases per map. Per-frame supply sync to server — client-independent replenishment avoids constant traffic; supply is only synced on capture events and in the snapshot, so late joiners receive correct state.
-**Applies to:** `src/scenes/GameScene.ts` (base methods, `setupCollision`), `src/network/types.ts`, `server/src/types.ts`, `src/network/NetworkManager.ts`.
+**Alternatives rejected:** Separate physics sprites for base bodies (considered using a `staticGroup`) — a regular dynamic group with `setImmovable(true)` is simpler and the performance difference is negligible at ≤8 bases per map. Per-frame supply sync to server — client-independent replenishment avoids constant traffic; supply is synced on capture events, refuel ticks, and in the snapshot.
+**Applies to:** `src/scenes/GameScene.ts` (base methods, `setupCollision`, `_baseRectColor`), `src/network/types.ts`, `server/src/types.ts`, `src/network/NetworkManager.ts`.
 
 ---
 
