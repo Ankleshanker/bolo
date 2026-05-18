@@ -101,24 +101,40 @@ Two map-type cards side by side:
 Top-to-bottom order:
 1. **Join-by-code** — 6-char input (keyboard-driven; `codeInputFocused` flag) + JOIN button
 2. **＋ CREATE ROOM** button → `view = 'create'`
-3. **ACTIVE GAMES** table — all non-ended rooms (public and private), up to 5 rows
+3. **Filter bar** — pill buttons for Access / Teams / Mode / min-players (see below)
+4. **ACTIVE GAMES** table — all non-ended rooms (public and private), no cap; scrollable when overflow
 
-The table auto-refreshes every 5 s via a looping `Phaser.Time.TimerEvent` stored in `refreshTimer`. The timer is created at the end of `_renderMultiBrowse()` and cancelled automatically whenever `_clearDynamic()` runs (mode switch, view change, resize).
+The table auto-refreshes every 5 s via a looping `Phaser.Time.TimerEvent` stored in `refreshTimer`. The timer is created at the end of `_renderMultiBrowse()` and cancelled in `_clearDynamic()` (mode switch, view change, resize). A `wheelHandler` stored in the same pattern handles mousewheel scroll and is also removed in `_clearDynamic()`.
 
-**Table columns** — x positions are proportional to `listW = W - 80` so they hold correct alignment on resize:
+**Filter bar** (`_renderFilterBar()`) — horizontal row of pill buttons rendered between the section header and list panel. All filter state is class-level and persists across the 5 s re-renders. `listScrollOffset` resets to 0 on any filter or sort change.
 
-| Column | Content | x anchor |
-|---|---|---|
-| ROOM | `room.name` | `listLeft + 8`, left |
-| PLAYERS | `playerCount/maxPlayers` | `listLeft + listW * 0.42`, center |
-| TEAMS | FFA / 2v2 / 4-way | `listLeft + listW * 0.54`, center |
-| MODE | Timer / Dom. / DM | `listLeft + listW * 0.66`, center |
-| ACCESS | 🔒 / 🔓 | `listLeft + listW * 0.80`, center |
-| TIME | MM:SS for PLAYING, "Lobby" for LOBBY | `listLeft + listW - 8`, right |
+| Group | Pills | State field | Behavior |
+|---|---|---|---|
+| Access | All / Public / Private | `filterAccess: 'all'|'public'|'private'` | exclusive |
+| Teams | FFA / 2v2 / 4-way | `filterTeams: Set<string>` | multi-select toggle; empty = show all |
+| Mode | Timer / Dom. / DM | `filterMode: Set<string>` | multi-select toggle; empty = show all |
+| Min players | 1+ / 2+ / 4+ | `filterMinSlots: number` | exclusive toggle; 0 = show all |
+
+**Scroll controls** — when `_getDisplayRooms()` returns more rows than fit in the list viewport, ▲/▼ text buttons appear at the right edge and a `1–N/total` counter renders midway. Mousewheel scrolls when the pointer is inside the list bounds. `listScrollOffset: number` is clamped to `[0, maxOffset]` on every render.
+
+`_getDisplayRooms(): RoomSummary[]` — applies all active filters then sort, returning a filtered+sorted copy of `this.roomList`. Called immediately before row rendering.
+
+**Column headers** — all six headers are interactive. Clicking cycles: none → asc ▲ → desc ▼ → none. The active header renders in gold bold. `sortCol: SortCol | null` and `sortDir: 'asc'|'desc'` track state. `SortCol` is a module-level type alias: `'name'|'players'|'teams'|'mode'|'access'|'time'`.
+
+| Column | Content | x anchor | sort key |
+|---|---|---|---|
+| ROOM | `room.name` | `listLeft + 8`, left | `name` |
+| PLAYERS | `playerCount/maxPlayers` | `listLeft + listW * 0.42`, center | `players` |
+| TEAMS | FFA / 2v2 / 4-way | `listLeft + listW * 0.54`, center | `teams` |
+| MODE | Timer / Dom. / DM | `listLeft + listW * 0.66`, center | `mode` |
+| ACCESS | 🔒 / 🔓 | `listLeft + listW * 0.80`, center | `access` |
+| TIME | MM:SS for PLAYING, "Lobby" for LOBBY | `listLeft + listW - 8`, right | `time` |
 
 `timeRemainingMs` is sourced from `RoomSummary.timeRemainingMs`, which `GameRoom.getSummary()` derives from `this.timerMs` (remaining ms, decremented live by `tick()`). For LOBBY rooms it is `timerSeconds * 1000` (the configured full duration).
 
-> **Access control note:** The 🔒 icon is cosmetic only. The server's `joinRoom` handler does not check `isPublic` — any room visible in the list can be joined by clicking the row, regardless of lock status.
+**Private room click** — clicking a 🔒 row opens a modal code-entry overlay (`_renderPrivatePrompt()`): dimmed full-screen background, room name, 6-char input, Join/Cancel buttons. The entered code is compared client-side against `room.code` (present in `RoomSummary`). Correct → `_doJoin(room.code)`. Wrong → error flash, input cleared. State fields: `pendingPrivateRoom: RoomSummary | null`, `privateCodeInput`, `privateCodeFocused`, `privateCodeError`. The prompt is keyboard-driven via a `privateCodeFocused` branch in `_onKey()` (checked before `nameInputFocused` and `codeInputFocused`). The prompt is cleared on: Cancel, successful join, mode switch, Back from Create, Leave from Room.
+
+> **Access control note:** The server's `joinRoom` handler does not enforce `isPublic`. The client-side code prompt is a UX gate only — `room.code` is already in the client's `roomList` payload. See `library/decisions.md`.
 
 ### Create room view (`_renderCreate()`)
 
@@ -154,7 +170,7 @@ Creates a hidden `<input type="file" accept=".bmap">` element, reads the selecte
 
 ### Keyboard handler
 
-`window.addEventListener('keydown', ...)` registered in `create()`, removed in `shutdown()`. Routes to `nameInputFocused` or `codeInputFocused` text input handling, or Enter/Space to start solo.
+`window.addEventListener('keydown', ...)` registered in `create()`, removed in `shutdown()`. Priority order: `privateCodeFocused` (private room prompt) → `nameInputFocused` (create room name) → `codeInputFocused` (join-by-code) → Enter/Space to start solo.
 
 ### Network listeners
 

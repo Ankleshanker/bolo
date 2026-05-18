@@ -171,12 +171,12 @@
 
 ---
 
-## Active Games list shows all rooms; private lock is cosmetic — 2026-05-18
+## Active Games list shows all rooms; private lock is a client-side UX gate — 2026-05-18
 
-**Decision:** `LobbyManager.listAllActiveRooms()` returns every non-ended room regardless of `settings.isPublic`. The 🔒/🔓 icon in the lobby table is a visual indicator only — the server's `joinRoom` handler has no `isPublic` enforcement gate.
-**Why:** The primary use-case for the Active Games list is spectating / late-joining in-progress games, where host intent about "publicness" matters less than discoverability. Enforcing access at the list level would hide PLAYING private rooms from players who have a code. Enforcing it at the join level would be a meaningful gameplay lock — that's a deliberate future decision, not a default.
-**Critical:** Do not add `if (!room.settings.isPublic) return;` to the `joinRoom` handler thinking you're "fixing" an oversight. That would break late-join for private rooms. If access control is desired, the correct design is: require a correct password/code to join, checked server-side; the list can still show the room.
-**Applies to:** `server/src/LobbyManager.ts` (`listAllActiveRooms`), `server/src/index.ts` (`joinRoom` handler), `src/scenes/LobbyScene.ts` (`_renderMultiBrowse`).
+**Decision:** `LobbyManager.listAllActiveRooms()` returns every non-ended room regardless of `settings.isPublic`. The server's `joinRoom` handler has no `isPublic` enforcement gate. On the client, clicking a 🔒 row opens a modal that asks the player to type the 6-digit code; the code is compared against `room.code` which is already present in the `RoomSummary` payload. This is a UX friction gate, not a security gate.
+**Why:** The primary use-case for showing private rooms is activity visibility (see who is playing). Hiding them entirely would make the list useless for that purpose. Enforcing access at the join level would be a meaningful security feature requiring server-side secret storage — a deliberate future decision, not a default. The client-side prompt is a reasonable middle ground: it deters accidental joins while keeping the implementation trivial.
+**Critical:** Do not add `if (!room.settings.isPublic) return;` to the `joinRoom` handler thinking you're "fixing" an oversight. That would break late-join for private rooms and contradict the design above. If real access control is desired, the correct design is: the host sets a hashed password on room creation, the `joinRoom` payload includes the plaintext, and the server checks the hash. The list can still show the room.
+**Applies to:** `server/src/LobbyManager.ts` (`listAllActiveRooms`), `server/src/index.ts` (`joinRoom` handler), `src/scenes/LobbyScene.ts` (`_renderMultiBrowse`, `_renderPrivatePrompt`, `_submitPrivateCode`).
 
 ---
 
