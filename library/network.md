@@ -15,9 +15,19 @@ Multiplayer is built on Socket.io (WebSocket transport). The client has a typed 
 | Game server | AWS Lightsail (Docker) | `https://api.bolo-online.com` |
 | Legacy server alias | Same Lightsail | `https://bolo.alisted.app` |
 
-Nginx (`matrix-nginx` container on Lightsail) proxies WebSocket connections to the `bolo-server` Docker container on port 3000. TLS certs managed by certbot with Cloudflare DNS-01 challenge.
+**GitHub Actions does NOT deploy** — it is a build-check only. Both components must be deployed manually. See `CLAUDE.md` → Deployment for the full sequence.
 
-### SSH access
+### Client deploy (Cloudflare Workers Assets)
+
+```bash
+# Always rebuild from HEAD first — dist/ is a build artifact, not version-controlled
+npm run build
+npx wrangler deploy
+```
+
+`wrangler.jsonc` in the repo root contains the Workers config. The `dist/` directory is uploaded as static assets with `not_found_handling: single-page-application`. See `library/decisions.md` → "Cloudflare Workers Assets for client hosting" for why this approach was chosen over GitHub Pages or Cloudflare Pages.
+
+### Server deploy (Lightsail)
 
 ```
 Host: 100.50.52.68
@@ -25,17 +35,18 @@ User: ubuntu
 Key:  C:/Users/BenFeingoldThoryn/OneDrive - Lincoln Institute of Land Policy/Desktop/Claude Cowork/Projects/Personal/Bolo/LightsailDefaultKey-us-east-1.pem
 ```
 
-Standard deploy command (run after pushing to master):
 ```bash
 ssh -i "C:/Users/BenFeingoldThoryn/OneDrive - Lincoln Institute of Land Policy/Desktop/Claude Cowork/Projects/Personal/Bolo/LightsailDefaultKey-us-east-1.pem" \
   -o StrictHostKeyChecking=no ubuntu@100.50.52.68 \
   "cd /opt/bolo && git pull && sudo docker compose up -d --build > /tmp/bolo-deploy.log 2>&1 && echo 'Deploy started'"
 ```
 
+Nginx (`matrix-nginx` container on Lightsail) proxies WebSocket connections to the `bolo-server` Docker container on port 3000. TLS certs managed by certbot with Cloudflare DNS-01 challenge.
+
 Verify health after deploy:
 ```bash
 curl https://api.bolo-online.com/health
-# Expected: {"status":"ok","players":0}
+# Expected: {"status":"ok","players":N}
 ```
 
 ---
@@ -273,5 +284,6 @@ The server distinguishes mode by `data.victimId === socket.playerId` (victim sen
 - [ ] RoomSettings interface changed
 - [ ] Win condition logic changed
 - [ ] Kill attribution model changed
-- [ ] Server deployment topology changed
+- [ ] Server deployment topology changed (SSH host, key path, docker compose file)
+- [ ] Client hosting changed (wrangler config, Cloudflare account)
 - [ ] Grace period duration changed

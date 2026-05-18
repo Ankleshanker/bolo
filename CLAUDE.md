@@ -25,6 +25,54 @@ A browser-based clone of the 1987/1993 classic Bolo. 2D tile-based tank combat o
 - [x] Phase 6 — Multiplayer: lobby, rooms, ghost tanks, bullet sync, world state sync, win conditions, spectator, disconnect grace, kill feed
 - [~] Phase 7 — Polish: minimap ✓, sound ✓, base capture ✓, organic map generator ✓, settings UI ✓, map file upload ✓; pixel art pass remaining
 
+## Deployment
+
+There is **no automatic deployment on push**. GitHub Actions runs a build check only. Both components must be deployed manually after committing.
+
+### Full deploy sequence
+
+```bash
+# 1. Build the client from the current working tree (always rebuild — dist/ is not auto-updated)
+npm run build
+
+# 2. Push client to Cloudflare Workers Assets
+npx wrangler deploy
+
+# 3. Deploy server to Lightsail (pulls latest master, rebuilds Docker image)
+ssh -i "C:/Users/BenFeingoldThoryn/OneDrive - Lincoln Institute of Land Policy/Desktop/Claude Cowork/Projects/Personal/Bolo/LightsailDefaultKey-us-east-1.pem" \
+  -o StrictHostKeyChecking=no ubuntu@100.50.52.68 \
+  "cd /opt/bolo && git pull && sudo docker compose up -d --build > /tmp/bolo-deploy.log 2>&1 && echo 'Deploy started'"
+
+# 4. Verify server health
+curl https://api.bolo-online.com/health
+# Expected: {"status":"ok","players":N}
+```
+
+### Critical: always rebuild before deploying
+
+`dist/` is a build artifact — it is NOT updated by `git pull` or by committing code. If any commits were made (by you or a background agent) since the last `npm run build`, the deployed client will be stale. Always run `npm run build` immediately before `npx wrangler deploy`.
+
+### Client-only changes (no server code touched)
+
+```bash
+npm run build && npx wrangler deploy
+```
+
+### Server-only changes (no client code touched)
+
+```bash
+ssh -i "..." ubuntu@100.50.52.68 "cd /opt/bolo && git pull && sudo docker compose up -d --build > /tmp/bolo-deploy.log 2>&1 && echo 'Deploy started'"
+```
+
+### Live URLs
+
+| Component | URL |
+|---|---|
+| Client | https://bolo-online.com |
+| Server API / health | https://api.bolo-online.com/health |
+
+---
+
 ## Library Maintenance
 
 After completing any task that changes a system, update the relevant library doc before closing. Check that doc's `Update Triggers` section as a checklist. If a new system is introduced, create a new doc and add it to `library/index.md` and the routing table below.
