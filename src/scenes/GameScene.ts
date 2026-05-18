@@ -27,6 +27,17 @@ const COST_WALL    = 4;
 const COST_PILLBOX = 10;
 const TREES_PER_HARVEST = 4;
 
+// Base system constants
+const BASE_MAX_HEALTH        = 4;
+const BASE_MAX_SHELLS        = 90;
+const BASE_MAX_MINES         = 20;
+const BASE_REFUEL_INTERVAL_MS = 1000;   // refuel tick every 1s while parked
+const BASE_REFUEL_SHELLS     = 10;      // shells given per refuel tick
+const BASE_REFUEL_MINES      = 1;       // mines given per refuel tick
+// 5 min (300 000 ms) from 0 → full
+const BASE_SHELLS_PER_MS     = BASE_MAX_SHELLS / (5 * 60 * 1000);
+const BASE_MINES_PER_MS      = BASE_MAX_MINES  / (5 * 60 * 1000);
+
 interface MineMarker {
   tileX: number;
   tileY: number;
@@ -84,15 +95,20 @@ export class GameScene extends Phaser.Scene {
     trees:  Phaser.GameObjects.Rectangle;
   };
 
-  // Base markers
-  private baseRects: Phaser.GameObjects.Rectangle[] = [];
+  // Base markers and runtime state
+  private baseRects:    Phaser.GameObjects.Rectangle[]        = [];
+  private baseGroup!:   Phaser.Physics.Arcade.Group;
+  private baseSprites:  Phaser.Physics.Arcade.Sprite[]        = [];
+  private baseHealth:   number[]                              = [];
+  private baseOwnerIds: (string | null)[]                     = [];
 
   // State
-  private dead          = false;
-  private respawnTimer  = 0;
-  private _sinking      = false;
-  private lastBaseTileX = -1;
-  private lastBaseTileY = -1;
+  private dead             = false;
+  private respawnTimer     = 0;
+  private _sinking         = false;
+  private lastBaseTileX    = -1;
+  private lastBaseTileY    = -1;
+  private baseRefuelAccum  = 0;
   private _mineDropTileX = -1;
   private _mineDropTileY = -1;
 
@@ -143,12 +159,16 @@ export class GameScene extends Phaser.Scene {
     this.playerNames     = new Map();
     this._mineDropTileX  = -1;
     this._mineDropTileY  = -1;
+    this.baseRefuelAccum = 0;
+    this.lastBaseTileX   = -1;
+    this.lastBaseTileY   = -1;
   }
 
   create() {
     this.mapData        = this.loadMapData();
     this.buildTilemap();
     this.spawnTank();
+    this.baseGroup      = this.physics.add.group();
     this.playerBullets  = new BulletManager(this);
     this.pillboxBullets = new BulletManager(this);
     this.pillboxes      = new PillboxManager(this, this.mapData.pills);
@@ -292,7 +312,8 @@ export class GameScene extends Phaser.Scene {
 
     this.checkPillPickup();
     this.checkMines();
-    this.checkBaseInteraction();
+    this.updateBaseSupplies(delta);
+    this.checkBaseInteraction(delta);
     this.settingsPanel.update(delta);
     this.updateMinimap();
     this.updateHUD();
@@ -359,7 +380,7 @@ export class GameScene extends Phaser.Scene {
         networkManager.sendPillboxUpdate(i, null, pill.health, pill.alive);
       }
       for (let i = 0; i < this.mapData.bases.length; i++) {
-        networkManager.sendBaseUpdate(i, null);
+        networkManager.sendBaseUpdate(i, null, 0, 0, 0);
       }
     }
 
@@ -425,21 +446,33 @@ export class GameScene extends Phaser.Scene {
     this._addNetHandler('baseUpdate', (d) => {
       const base = this.mapData.bases[d.index];
       if (!base) return;
+
+      const wasNeutral = base.owner === 0xFF;
+      this.baseHealth[d.index] = d.health;
+      base.shells = d.shells;
+      base.mines  = d.mines;
+
       if (d.ownerId === null) {
-        base.owner = 0xFF; // neutral
-        this.baseRects[d.index]?.setFillStyle(0xffaa00);
+        base.owner = 0xFF;
+        this.baseOwnerIds[d.index] = null;
+        this.baseRects[d.index]?.setFillStyle(0xffffff);
+        if (!wasNeutral) this.chyron.push('A base was neutralized.');
       } else if (net.isMyTeam(d.ownerId)) {
-        base.owner = 0x00; // friendly
+        base.owner = 0x00;
+        this.baseOwnerIds[d.index] = d.ownerId;
         this.baseRects[d.index]?.setFillStyle(this.teamColor());
-        if (d.ownerId !== net.playerId) {
+        if (d.ownerId !== net.playerId && wasNeutral) {
           const name = this.playerNames.get(d.ownerId) ?? 'A teammate';
           this.chyron.push(`${name} claimed a base.`);
         }
       } else {
-        base.owner = 0x01; // enemy
+        base.owner = 0x01;
+        this.baseOwnerIds[d.index] = d.ownerId;
         this.baseRects[d.index]?.setFillStyle(0xff4444);
-        const name = this.playerNames.get(d.ownerId) ?? 'An enemy';
-        this.chyron.push(`${name} claimed a base.`);
+        if (wasNeutral) {
+          const name = this.playerNames.get(d.ownerId) ?? 'An enemy';
+          this.chyron.push(`${name} claimed a base.`);
+        }
       }
     });
 
@@ -589,9 +622,13 @@ export class GameScene extends Phaser.Scene {
       const base = this.mapData.bases[bs.index];
       if (!base) continue;
       const net = networkManager;
+      this.baseHealth[bs.index] = bs.health;
+      base.shells = bs.shells;
+      base.mines  = bs.mines;
+      this.baseOwnerIds[bs.index] = bs.ownerId;
       if (bs.ownerId === null) {
         base.owner = 0xFF;
-        this.baseRects[bs.index]?.setFillStyle(0xffaa00);
+        this.baseRects[bs.index]?.setFillStyle(0xffffff);
       } else if (net.isMyTeam(bs.ownerId)) {
         base.owner = 0x00;
         this.baseRects[bs.index]?.setFillStyle(this.teamColor());
@@ -709,13 +746,38 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderMapObjects() {
-    for (const base of this.mapData.bases) {
+    // Reset arrays on every create() in case the scene is restarted
+    this.baseRects    = [];
+    this.baseSprites  = [];
+    this.baseHealth   = [];
+    this.baseOwnerIds = [];
+
+    for (let i = 0; i < this.mapData.bases.length; i++) {
+      const base = this.mapData.bases[i];
       const cx = base.x * TILE_SIZE + TILE_SIZE / 2;
       const cy = base.y * TILE_SIZE + TILE_SIZE / 2;
       const neutral = base.owner === 0xFF;
-      const rect = this.add.rectangle(cx, cy, 24, 24, neutral ? 0xffaa00 : this.teamColor()).setDepth(2);
+
+      const rect = this.add.rectangle(cx, cy, 24, 24, neutral ? 0xffffff : this.teamColor()).setDepth(2);
       this.baseRects.push(rect);
       this.add.text(cx, cy, '★', { fontSize: '14px', color: '#000000' }).setDepth(3).setOrigin(0.5);
+
+      // Invisible physics sprite for bullet-overlap hit detection
+      const hitSprite = this.physics.add.sprite(cx, cy, 'mine').setAlpha(0).setDepth(2);
+      (hitSprite.body as Phaser.Physics.Arcade.Body).setImmovable(true).setSize(24, 24).setOffset(-4, -4);
+      hitSprite.setData('baseIndex', i);
+      this.baseGroup.add(hitSprite);
+      this.baseSprites.push(hitSprite);
+
+      // Health and owner tracking
+      this.baseHealth.push(neutral ? 0 : BASE_MAX_HEALTH);
+      this.baseOwnerIds.push(null);
+
+      // Ensure supply fields start at 0 — map parser may set shells/mines > 0 from .bmap data
+      if (neutral) {
+        base.shells = 0;
+        base.mines  = 0;
+      }
     }
   }
 
@@ -944,6 +1006,42 @@ export class GameScene extends Phaser.Scene {
         this.soundManager.playHitTank();
         const killed = this.tank.takeDamage();
         if (killed) this.time.delayedCall(0, () => this.onTankKilled());
+      },
+    );
+
+    // Player bullets damage enemy/neutral bases
+    this.physics.add.overlap(
+      this.playerBullets.group,
+      this.baseGroup,
+      (obj1, obj2) => {
+        const isBullet = this.playerBullets.group.contains(obj1 as Phaser.GameObjects.GameObject);
+        const bullet     = (isBullet ? obj1 : obj2) as Phaser.Physics.Arcade.Sprite;
+        const baseSprite = (isBullet ? obj2 : obj1) as Phaser.Physics.Arcade.Sprite;
+        if (!bullet.active) return;
+
+        const idx  = baseSprite.getData('baseIndex') as number;
+        const base = this.mapData.bases[idx];
+        if (!base) return;
+        if (base.owner === 0x00) return; // can't shoot own base
+
+        this.playerBullets.kill(bullet);
+        this.baseHealth[idx] = Math.max(0, this.baseHealth[idx] - 1);
+
+        if (this.baseHealth[idx] === 0) {
+          base.owner  = 0xFF;
+          base.shells = 0;
+          base.mines  = 0;
+          this.baseOwnerIds[idx] = null;
+          this.baseRects[idx]?.setFillStyle(0xffffff);
+          this.chyron.push('A base was neutralized.');
+          if (this.multiplayerMode) {
+            networkManager.sendBaseUpdate(idx, null, 0, 0, 0);
+          }
+        } else if (this.multiplayerMode) {
+          networkManager.sendBaseUpdate(
+            idx, this.baseOwnerIds[idx], this.baseHealth[idx], base.shells, base.mines,
+          );
+        }
       },
     );
 
@@ -1425,36 +1523,99 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private checkBaseInteraction() {
+  private checkBaseInteraction(delta: number) {
     const tx = this.tank.tileX;
     const ty = this.tank.tileY;
-    if (tx === this.lastBaseTileX && ty === this.lastBaseTileY) return;
 
+    // Find if tank is standing on any base
+    let onBaseIdx = -1;
     for (let i = 0; i < this.mapData.bases.length; i++) {
-      const base = this.mapData.bases[i];
-      if (base.x !== tx || base.y !== ty) continue;
+      const b = this.mapData.bases[i];
+      if (b.x === tx && b.y === ty) { onBaseIdx = i; break; }
+    }
 
-      this.lastBaseTileX = tx;
-      this.lastBaseTileY = ty;
-
-      if (base.owner === 0xFF) {
-        // Neutral → capture
-        base.owner = 0x00;
-        this.baseRects[i]?.setFillStyle(this.teamColor());
-        this.soundManager.playBuildTile();
-        this.chyron.push('You claimed a base.');
-        if (this.multiplayerMode) networkManager.sendBaseUpdate(i, networkManager.playerId);
-      } else if (base.owner === 0x00) {
-        // Friendly → resupply
-        this.tank.shells = 200;
-        this.tank.health = Math.min(10, this.tank.health + 5);
-        this.tank.mines  = Math.min(20, this.tank.mines + 5);
-        this.soundManager.playBaseResupply();
+    if (onBaseIdx === -1) {
+      if (this.lastBaseTileX !== -1) {
+        this.lastBaseTileX   = -1;
+        this.lastBaseTileY   = -1;
+        this.baseRefuelAccum = 0;
       }
       return;
     }
-    this.lastBaseTileX = -1;
-    this.lastBaseTileY = -1;
+
+    const base = this.mapData.bases[onBaseIdx];
+
+    if (base.owner === 0xFF) {
+      // Neutral (HP=0): capture on first contact
+      if (tx !== this.lastBaseTileX || ty !== this.lastBaseTileY) {
+        this.lastBaseTileX = tx;
+        this.lastBaseTileY = ty;
+        this._captureBase(onBaseIdx);
+      }
+      return;
+    }
+
+    if (base.owner === 0x01) return; // enemy: must shoot to HP 0 first
+
+    // Friendly: continuous refuel while parked
+    this.lastBaseTileX    = tx;
+    this.lastBaseTileY    = ty;
+    this.baseRefuelAccum += delta;
+
+    if (this.baseRefuelAccum >= BASE_REFUEL_INTERVAL_MS) {
+      this.baseRefuelAccum -= BASE_REFUEL_INTERVAL_MS;
+      this._doBaseRefuel(onBaseIdx);
+    }
+  }
+
+  private _captureBase(idx: number) {
+    const base = this.mapData.bases[idx];
+    base.owner  = 0x00;
+    base.shells = 0;
+    base.mines  = 0;
+    this.baseHealth[idx]   = BASE_MAX_HEALTH;
+    this.baseOwnerIds[idx] = this.multiplayerMode ? networkManager.playerId : 'local';
+    this.baseRects[idx]?.setFillStyle(this.teamColor());
+    this.soundManager.playBuildTile();
+    this.chyron.push('You claimed a base.');
+    if (this.multiplayerMode) {
+      networkManager.sendBaseUpdate(idx, networkManager.playerId, BASE_MAX_HEALTH, 0, 0);
+    }
+  }
+
+  private _doBaseRefuel(idx: number) {
+    const base = this.mapData.bases[idx];
+    let refueled = false;
+
+    if (this.tank.health < 10) {
+      this.tank.health = Math.min(10, this.tank.health + 1);
+      refueled = true;
+    }
+
+    if (this.tank.shells < 200 && base.shells > 0) {
+      const give = Math.min(BASE_REFUEL_SHELLS, Math.floor(base.shells), 200 - this.tank.shells);
+      if (give > 0) { this.tank.shells += give; base.shells -= give; refueled = true; }
+    }
+
+    if (this.tank.mines < 20 && base.mines > 0) {
+      const give = Math.min(BASE_REFUEL_MINES, Math.floor(base.mines), 20 - this.tank.mines);
+      if (give > 0) { this.tank.mines += give; base.mines -= give; refueled = true; }
+    }
+
+    if (refueled) this.soundManager.playBaseResupply();
+  }
+
+  private updateBaseSupplies(delta: number) {
+    for (let i = 0; i < this.mapData.bases.length; i++) {
+      const base = this.mapData.bases[i];
+      if (base.owner === 0xFF) continue;
+      if (base.shells < BASE_MAX_SHELLS) {
+        base.shells = Math.min(BASE_MAX_SHELLS, base.shells + BASE_SHELLS_PER_MS * delta);
+      }
+      if (base.mines < BASE_MAX_MINES) {
+        base.mines = Math.min(BASE_MAX_MINES, base.mines + BASE_MINES_PER_MS * delta);
+      }
+    }
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -1534,7 +1695,9 @@ export class GameScene extends Phaser.Scene {
 
     // Base dots
     for (const base of this.mapData.bases) {
-      const col = base.owner === 0x00 ? 0x44aaff : 0xffaa00;
+      const col = base.owner === 0x00 ? 0x44aaff
+                : base.owner === 0x01 ? 0xff4444
+                : 0xffffff; // neutral = white
       const mx = objX + ((base.x + 0.5) * TILE_SIZE / W) * MINI;
       const my = objY + ((base.y + 0.5) * TILE_SIZE / W) * MINI;
       this.minimapBlip.fillStyle(col, 0.9);

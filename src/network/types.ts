@@ -6,7 +6,7 @@ export interface PlayerInfo { playerId: string; name: string; color: string; tea
 export interface RoomSummary { roomId: string; code: string; name: string; hostName: string; playerCount: number; maxPlayers: number; state: RoomState; settings: RoomSettings; }
 export interface TileDiff { tileX: number; tileY: number; displayTile: number; }
 export interface PillboxState { index: number; ownerId: string|null; health: number; alive: boolean; }
-export interface BaseState { index: number; ownerId: string|null; }
+export interface BaseState { index: number; ownerId: string|null; health: number; shells: number; mines: number; }
 export interface MineState { tileX: number; tileY: number; ownerPlayerId: string; }
 export interface BoatState { tileX: number; tileY: number; }
 export interface WorldSnapshot { terrainDiffs: TileDiff[]; pillboxStates: PillboxState[]; baseStates: BaseState[]; mines: MineState[]; boats: BoatState[]; }

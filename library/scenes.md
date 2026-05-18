@@ -234,7 +234,7 @@ When the local tank dies in MP, `spectatorMode = true`. Q/E keys cycle `spectato
 - **Stat bars** — start at y=512, stride 26px: HP (green), Shells (yellow), Mines (red), Trees (brown)
 - **Kill feed** — bottom-right toast notifications (depth 31), timed removal
 - **Timer** — top-center of game viewport
-- **Minimap** — bottom-right, 128×128, depth 90–91
+- **Minimap** — bottom-right, 128×128, depth 90–91; base blips: friendly=`0x44aaff`, neutral=`0xffffff`, enemy=`0xff4444`
 - **Chyron** — game-viewport-width scrolling ticker anchored to the bottom of the game area (depth 33–35). Starts at the right edge of the panel (canvas x = PANEL_WIDTH), does not extend into the left panel. Created in `buildHUD()`; all three objects (bg, accent line, label) ignored by `uiCam`. Events pushed: player joined/left, tank destroyed, pillbox destroyed, base claimed, drowned, mine hit.
 
 ### Depth layer assignments

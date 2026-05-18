@@ -85,22 +85,52 @@ Actions queue is one deep — if the builder is busy, the click is silently disc
 
 `checkBaseInteraction()` runs each frame in the update loop. When `tank.tileX/tileY` matches a base tile:
 
-### Resupply (friendly base)
+### Base states
 
-When entering a base owned by the local player's team:
-- `tank.shells` → 200
-- `tank.health` → `min(health + 5, 10)`
-- `tank.mines` → `min(mines + 5, 20)`
+| `owner` | Color | Meaning |
+|---|---|---|
+| `0xFF` | White | Neutral — HP=0, drive over to capture |
+| `0x00` | Team color | Friendly — refuels tank while parked |
+| `0x01` | Red | Enemy — must shoot to HP 0 before capturing |
 
-`lastBaseTileX/Y` tracks the last triggered base to prevent repeated triggers while the tank stands still. Resets to `(-1, -1)` on exit.
+### HP system
 
-### Capture (neutral or enemy base)
+- `BASE_MAX_HEALTH = 4` (matching pillboxes).
+- Neutral bases have `baseHealth[i] = 0` and can be captured by driving over them.
+- Capturing sets HP to `BASE_MAX_HEALTH` and resets supplies to 0.
+- Player bullets overlap an invisible physics sprite per base (`baseGroup`). Hitting an enemy/neutral-owned base decrements `baseHealth[i]`; at 0 → base goes neutral (white).
+- Own team's base cannot be damaged by bullets.
 
-Driving over a neutral or enemy base captures it for the local player:
-- Base `owner` set to `0x00` (friendly)
-- Base marker rectangle recolored to team color
-- Sound plays
-- In MP: `networkManager.sendBaseUpdate(index, networkManager.playerId)` broadcasts capture
+### Supply system
+
+Each base tracks `base.shells` (0–90) and `base.mines` (0–20) as runtime float values on `BaseInfo`:
+- On capture (or recapture from enemy): both reset to 0.
+- While owned (non-neutral): replenish at `90 / (5×60×1000) shells/ms` and `20 / (5×60×1000) mines/ms` — 5 minutes from 0 to full.
+- Replenishment runs every frame via `updateBaseSupplies(delta)`.
+
+### Continuous refuel (friendly base)
+
+While tank is parked on a friendly base, `checkBaseInteraction(delta)` accumulates `baseRefuelAccum`. Every `BASE_REFUEL_INTERVAL_MS = 1000 ms`:
+- Health: `+1` up to max 10 (no supply cost).
+- Shells: give `min(10, floor(base.shells), 200 − tank.shells)` from base supply.
+- Mines: give `min(1, floor(base.mines), 20 − tank.mines)` from base supply.
+- Plays resupply sound if anything was transferred.
+
+`lastBaseTileX/Y` still tracks current base; `baseRefuelAccum` resets to 0 when the tank leaves.
+
+### Capture (neutral base)
+
+Driving onto a neutral base for the first time (`lastBaseTileX/Y` mismatch):
+- `base.owner = 0x00`, supplies = 0, `baseHealth[i] = BASE_MAX_HEALTH`.
+- Rect recolored to team color.
+- In MP: `networkManager.sendBaseUpdate(index, playerId, BASE_MAX_HEALTH, 0, 0)`.
+
+### Neutralizing (enemy base)
+
+When a player's bullets reduce `baseHealth[i]` to 0:
+- `base.owner = 0xFF`, supplies = 0.
+- Rect recolored to white.
+- In MP: `networkManager.sendBaseUpdate(index, null, 0, 0, 0)`.
 
 ---
 
@@ -115,6 +145,7 @@ Driving over a neutral or enemy base captures it for the local player:
 - [ ] Build costs changed
 - [ ] New build action added to ActionPanel
 - [ ] Builder speed, timeout, or arrive distance changed
-- [ ] Base resupply amounts or logic changed
-- [ ] Base capture broadcast event changed
+- [ ] Base HP max, supply caps, or refuel tick amounts changed
+- [ ] Base resupply timing or accumulator logic changed
+- [ ] Base capture/neutralize broadcast event changed
 - [ ] Click handler coordinate logic changed
