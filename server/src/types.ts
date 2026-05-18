@@ -77,12 +77,19 @@ export interface BoatState {
   tileY: number;
 }
 
+export interface PillPickupState {
+  id: string;
+  x:  number;
+  y:  number;
+}
+
 export interface WorldSnapshot {
   terrainDiffs:  TileDiff[];
   pillboxStates: PillboxState[];
   baseStates:    BaseState[];
   mines:         MineState[];
   boats:         BoatState[];
+  pillPickups:   PillPickupState[];
 }
 
 // ─── Tank state (sent 20 Hz client → server → all other clients) ──────────────
@@ -326,3 +333,8 @@ export interface S2C_PillboxBulletFired {
 
 export interface C2S_TankPush { targetId: string; impulseX: number; impulseY: number; }
 export interface S2C_TankPush { impulseX: number; impulseY: number; }
+
+export interface C2S_PillPickupSpawned  { id: string; x: number; y: number; }
+export interface S2C_PillPickupSpawned  { id: string; x: number; y: number; }
+export interface C2S_PillPickupCollected { id: string; }
+export interface S2C_PillPickupCollected { id: string; collectorId: string; }

@@ -9,7 +9,8 @@ export interface PillboxState { index: number; ownerId: string|null; health: num
 export interface BaseState { index: number; ownerId: string|null; health: number; shells: number; mines: number; }
 export interface MineState { tileX: number; tileY: number; ownerPlayerId: string; }
 export interface BoatState { tileX: number; tileY: number; }
-export interface WorldSnapshot { terrainDiffs: TileDiff[]; pillboxStates: PillboxState[]; baseStates: BaseState[]; mines: MineState[]; boats: BoatState[]; }
+export interface PillPickupState { id: string; x: number; y: number; }
+export interface WorldSnapshot { terrainDiffs: TileDiff[]; pillboxStates: PillboxState[]; baseStates: BaseState[]; mines: MineState[]; boats: BoatState[]; pillPickups: PillPickupState[]; }
 export interface TankState { playerId: string; x: number; y: number; angle: number; alive: boolean; inForest: boolean; inBoat: boolean; health: number; shells: number; mines: number; trees: number; }
 export interface C2S_CreateRoom { roomName: string; settings: RoomSettings; name: string; color: string; }
 export interface C2S_JoinRoom { code: string; name: string; color: string; }
@@ -48,3 +49,7 @@ export interface S2C_SoldierState { playerId: string; x: number; y: number; acti
 export interface S2C_PillboxFire { pillIndex: number; angleDeg: number; }
 export interface C2S_TankPush { targetId: string; impulseX: number; impulseY: number; }
 export interface S2C_TankPush { impulseX: number; impulseY: number; }
+export interface C2S_PillPickupSpawned  { id: string; x: number; y: number; }
+export interface S2C_PillPickupSpawned  { id: string; x: number; y: number; }
+export interface C2S_PillPickupCollected { id: string; }
+export interface S2C_PillPickupCollected { id: string; collectorId: string; }

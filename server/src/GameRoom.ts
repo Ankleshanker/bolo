@@ -1,7 +1,7 @@
 import type { Server } from 'socket.io';
 import type {
   RoomSettings, RoomState, PlayerInfo, RoomSummary,
-  TankState, TileDiff, PillboxState, BaseState, MineState, BoatState,
+  TankState, TileDiff, PillboxState, BaseState, MineState, BoatState, PillPickupState,
   S2C_GameStart, S2C_GameOver, S2C_StateSnapshot, S2C_TimeUpdate, S2C_PlayerKill,
 } from './types.js';
 
@@ -29,6 +29,7 @@ export class GameRoom {
     baseStates:    [] as BaseState[],
     mines:         [] as MineState[],
     boats:         [] as BoatState[],
+    pillPickups:   [] as PillPickupState[],
   };
 
   timerMs         = 0;
@@ -304,6 +305,17 @@ export class GameRoom {
 
   removeBoatAt(tileX: number, tileY: number): void {
     this.snapshot.boats = this.snapshot.boats.filter(b => !(b.tileX === tileX && b.tileY === tileY));
+  }
+
+  addPillPickup(state: PillPickupState): void {
+    this.snapshot.pillPickups.push(state);
+  }
+
+  removePillPickup(id: string): boolean {
+    const i = this.snapshot.pillPickups.findIndex(p => p.id === id);
+    if (i < 0) return false;
+    this.snapshot.pillPickups.splice(i, 1);
+    return true;
   }
 
   updatePillbox(state: PillboxState): void {

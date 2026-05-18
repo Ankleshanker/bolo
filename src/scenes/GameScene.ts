@@ -72,7 +72,8 @@ export class GameScene extends Phaser.Scene {
   private boats: BoatMarker[] = [];
   private inBoat      = false;
   private activeBoat: BoatMarker | null = null;
-  private pillPickups: Phaser.GameObjects.Sprite[] = [];
+  private pillPickups: { sprite: Phaser.GameObjects.Sprite; id: string }[] = [];
+  private pendingPillCollects = new Set<string>();
 
   // Cameras
   private uiCam!: Phaser.Cameras.Scene2D.Camera;
@@ -443,6 +444,25 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
+    this._addNetHandler('pillPickupSpawned', (d) => {
+      const sprite = this.add.sprite(d.x, d.y, 'pill_neutral')
+        .setDepth(4).setScale(0.65).setAlpha(0.9);
+      this.pillPickups.push({ sprite, id: d.id });
+    });
+
+    this._addNetHandler('pillPickupCollected', (d) => {
+      const idx = this.pillPickups.findIndex(p => p.id === d.id);
+      if (idx >= 0) {
+        this.pillPickups[idx].sprite.destroy();
+        this.pillPickups.splice(idx, 1);
+      }
+      this.pendingPillCollects.delete(d.id);
+      if (d.collectorId === networkManager.playerId) {
+        this.tank.pillsCarried = 1;
+        this.soundManager.playPillPickup();
+      }
+    });
+
     this._addNetHandler('baseUpdate', (d) => {
       const base = this.mapData.bases[d.index];
       if (!base) return;
@@ -648,6 +668,15 @@ export class GameScene extends Phaser.Scene {
     // Boats
     for (const b of snap.boats) {
       this.ensureBoatAtTile(b.tileX, b.tileY);
+    }
+    // Pill pickups — rebuild from authoritative snapshot (handles late join / reconnect)
+    for (const p of this.pillPickups) p.sprite.destroy();
+    this.pillPickups = [];
+    this.pendingPillCollects.clear();
+    for (const pu of (snap.pillPickups ?? [])) {
+      const sprite = this.add.sprite(pu.x, pu.y, 'pill_neutral')
+        .setDepth(4).setScale(0.65).setAlpha(0.9);
+      this.pillPickups.push({ sprite, id: pu.id });
     }
     // Ghost tank states
     for (const ts of snap.tankStates) {
@@ -983,10 +1012,14 @@ export class GameScene extends Phaser.Scene {
             this.time.delayedCall(0, () => {
               this.spawnExplosionAt(x, y);
               this.pillboxes.removePill(p);
-              if (!this.multiplayerMode) {
-                const pickup = this.add.sprite(x, y, 'pill_neutral')
-                  .setDepth(4).setScale(0.65).setAlpha(0.9);
-                this.pillPickups.push(pickup);
+              const pickup = this.add.sprite(x, y, 'pill_neutral')
+                .setDepth(4).setScale(0.65).setAlpha(0.9);
+              if (this.multiplayerMode) {
+                const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                this.pillPickups.push({ sprite: pickup, id });
+                networkManager.sendPillPickupSpawned(id, x, y);
+              } else {
+                this.pillPickups.push({ sprite: pickup, id: '' });
               }
             });
           }
@@ -1387,19 +1420,25 @@ export class GameScene extends Phaser.Scene {
   }
 
   private checkPillPickup() {
-    if (this.multiplayerMode) return; // MP: pills don't drop pickups
     if (this.tank.pillsCarried >= 1) return;
     const tx = this.tank.tileX;
     const ty = this.tank.tileY;
     for (let i = this.pillPickups.length - 1; i >= 0; i--) {
-      const pickup = this.pillPickups[i];
-      const ptx = Math.floor(pickup.x / TILE_SIZE);
-      const pty = Math.floor(pickup.y / TILE_SIZE);
+      const { sprite, id } = this.pillPickups[i];
+      const ptx = Math.floor(sprite.x / TILE_SIZE);
+      const pty = Math.floor(sprite.y / TILE_SIZE);
       if (ptx === tx && pty === ty) {
-        this.tank.pillsCarried = 1;
-        this.soundManager.playPillPickup();
-        pickup.destroy();
-        this.pillPickups.splice(i, 1);
+        if (this.multiplayerMode) {
+          if (!this.pendingPillCollects.has(id)) {
+            this.pendingPillCollects.add(id);
+            networkManager.sendPillPickupCollected(id);
+          }
+        } else {
+          this.tank.pillsCarried = 1;
+          this.soundManager.playPillPickup();
+          sprite.destroy();
+          this.pillPickups.splice(i, 1);
+        }
         break;
       }
     }

@@ -30,6 +30,8 @@ import type {
   S2C_SoldierState,
   S2C_PillboxFire,
   S2C_TankPush,
+  S2C_PillPickupSpawned,
+  S2C_PillPickupCollected,
 } from './types.ts';
 
 // ---------------------------------------------------------------------------
@@ -63,6 +65,8 @@ export type NetEvents = {
   soldierState:         S2C_SoldierState;
   pillboxFire:          S2C_PillboxFire;
   tankPush:             S2C_TankPush;
+  pillPickupSpawned:   S2C_PillPickupSpawned;
+  pillPickupCollected: S2C_PillPickupCollected;
   kicked:               void;
   error:                { message: string };
 };
@@ -103,6 +107,8 @@ function makeListenerMap(): ListenerMap {
     soldierState:        new Set(),
     pillboxFire:         new Set(),
     tankPush:            new Set(),
+    pillPickupSpawned:   new Set(),
+    pillPickupCollected: new Set(),
     kicked:              new Set(),
     error:               new Set(),
   };
@@ -119,6 +125,7 @@ const SERVER_EVENTS: (keyof NetEvents)[] = [
   'tileChanged', 'pillboxUpdate', 'baseUpdate', 'mineAdded', 'mineDetonated',
   'boatAdded', 'timeUpdate', 'playerKill', 'gameOver', 'pillboxBulletFired',
   'soldierState', 'pillboxFire', 'tankPush',
+  'pillPickupSpawned', 'pillPickupCollected',
   'kicked', 'error',
 ];
 
@@ -293,6 +300,14 @@ export class NetworkManager {
 
   sendTankPush(targetId: string, impulseX: number, impulseY: number): void {
     this.socket?.volatile.emit('tankPush', { targetId, impulseX, impulseY });
+  }
+
+  sendPillPickupSpawned(id: string, x: number, y: number): void {
+    this.socket?.emit('pillPickupSpawned', { id, x, y });
+  }
+
+  sendPillPickupCollected(id: string): void {
+    this.socket?.emit('pillPickupCollected', { id });
   }
 
   returnToLobby(): void {

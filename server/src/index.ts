@@ -12,6 +12,9 @@ import type {
   C2S_PillboxBulletFired,
   C2S_SoldierState,
   C2S_TankPush,
+  C2S_PillPickupSpawned, C2S_PillPickupCollected,
+  S2C_PillPickupSpawned, S2C_PillPickupCollected,
+  PillPickupState,
   TankState,
   S2C_RoomJoined, S2C_PlayerJoined, S2C_PlayerGhosted,
   S2C_PlayerReconnected, S2C_PlayerRemoved, S2C_HostChanged,
@@ -345,6 +348,25 @@ io.on('connection', (socket) => {
     if (!room || room.state !== 'PLAYING') return;
     room.addBoat(data);
     socket.to(room.roomId).emit('boatAdded', data);
+  });
+
+  socket.on('pillPickupSpawned', (data: C2S_PillPickupSpawned) => {
+    const room = lobbyManager.getRoomBySocketId(socket.id);
+    if (!room || room.state !== 'PLAYING') return;
+    room.addPillPickup(data);
+    const payload: S2C_PillPickupSpawned = data;
+    socket.to(room.roomId).emit('pillPickupSpawned', payload);
+  });
+
+  socket.on('pillPickupCollected', (data: C2S_PillPickupCollected) => {
+    const room = lobbyManager.getRoomBySocketId(socket.id);
+    if (!room || room.state !== 'PLAYING') return;
+    const playerId = room.socketToPlayer.get(socket.id);
+    if (!playerId) return;
+    const removed = room.removePillPickup(data.id);
+    if (!removed) return;
+    const payload: S2C_PillPickupCollected = { id: data.id, collectorId: playerId };
+    io.to(room.roomId).emit('pillPickupCollected', payload);
   });
 
   // ─── Combat events ────────────────────────────────────────────────────────
