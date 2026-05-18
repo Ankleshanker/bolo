@@ -70,8 +70,9 @@ export class LobbyScene extends Phaser.Scene {
   // ── mp lobby state ────────────────────────────────────────────────────────
   private roomList: RoomSummary[] = [];
   private mpPlayers: PlayerInfo[] = [];
-  private roomNameInput    = '';
-  private joinCodeInput    = '';
+  private roomNameInput       = '';
+  private joinCodeInput       = '';
+  private pendingAutoJoinCode = '';
   private nameInputFocused = false;
   private codeInputFocused = false;
   private createSettings: RoomSettings = {
@@ -135,6 +136,14 @@ export class LobbyScene extends Phaser.Scene {
     this.permanentObjs = [];
     this.createSettings.seed = this.seed;
 
+    // Read ?room= query param for direct-join links
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get('room');
+    if (roomParam) {
+      this.pendingAutoJoinCode = roomParam.toUpperCase().trim();
+      history.replaceState({}, '', window.location.pathname);
+    }
+
     this._buildPermanent();
 
     // ── Resize ────────────────────────────────────────────────────────────
@@ -160,6 +169,12 @@ export class LobbyScene extends Phaser.Scene {
     // ── NetworkManager listeners ──────────────────────────────────────────
     networkManager.on('roomList', d => {
       this.roomList = d.rooms;
+      if (this.pendingAutoJoinCode) {
+        const code = this.pendingAutoJoinCode;
+        this.pendingAutoJoinCode = '';
+        this._doJoin(code);
+        return;
+      }
       if (this.mode === 'multi' && this.view === 'browse') this._renderMultiBrowse();
     });
 
@@ -1073,7 +1088,7 @@ export class LobbyScene extends Phaser.Scene {
     }).setOrigin(0.5));
 
     // Copy link hint
-    this._push(this.add.text(cx, topY, `Share: bolo.alisted.app?room=${code}`, {
+    this._push(this.add.text(cx, topY, `Share: bolo-online.com?room=${code}`, {
       fontSize: '13px', color: '#2a4a6a',
     }).setOrigin(0.5));
 

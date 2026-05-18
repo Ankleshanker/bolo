@@ -385,7 +385,7 @@ export class GameScene extends Phaser.Scene {
       .on('pointerout',  () => copyBtn.setStyle({ color: '#667788' }))
       .on('pointerdown', () => {
         navigator.clipboard.writeText(
-          `Join my Bolo Online game using the following room code: ${net.roomCode}\nhttps://bolo.alisted.app?room=${net.roomCode}`,
+          `Join my Bolo Online game using the following room code: ${net.roomCode}\nhttps://bolo-online.com?room=${net.roomCode}`,
         );
         copyBtn.setText('✓ Copied!').setStyle({ color: '#88ff88' });
         this.time.delayedCall(1500, () => {
