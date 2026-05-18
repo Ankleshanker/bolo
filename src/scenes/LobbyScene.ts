@@ -6,6 +6,7 @@ import type { RoomSettings, RoomSummary, PlayerInfo, S2C_GameStart } from '../ne
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type LobbyView = 'browse' | 'create' | 'room';
+type SortCol   = 'name' | 'players' | 'teams' | 'mode' | 'access' | 'time';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -85,10 +86,26 @@ export class LobbyScene extends Phaser.Scene {
     timerSeconds: 600,
   };
 
+  // ── sort / filter state ───────────────────────────────────────────────────
+  private sortCol:       SortCol | null = null;
+  private sortDir:       'asc' | 'desc' = 'asc';
+  private filterAccess:  'all' | 'public' | 'private' = 'all';
+  private filterTeams:   Set<string> = new Set();
+  private filterMode:    Set<string> = new Set();
+  private filterMinSlots = 0;
+  private listScrollOffset = 0;
+
+  // ── private-room prompt state ─────────────────────────────────────────────
+  private pendingPrivateRoom: RoomSummary | null = null;
+  private privateCodeInput    = '';
+  private privateCodeFocused  = false;
+  private privateCodeError    = '';
+
   // ── object pools ─────────────────────────────────────────────────────────
   private dynamicObjs:   Phaser.GameObjects.GameObject[] = [];
   private permanentObjs: Phaser.GameObjects.GameObject[] = [];
   private refreshTimer?: Phaser.Time.TimerEvent;
+  private wheelHandler?: (...args: unknown[]) => void;
   private keydownHandler?: (e: KeyboardEvent) => void;
 
   // ── tab refs (rebuilt on resize) ──────────────────────────────────────────
@@ -205,6 +222,13 @@ export class LobbyScene extends Phaser.Scene {
   // ─── Key handler ──────────────────────────────────────────────────────────
 
   private _onKey(e: KeyboardEvent) {
+    if (this.privateCodeFocused) {
+      if (e.key === 'Backspace') { this.privateCodeInput = this.privateCodeInput.slice(0, -1); this._renderMultiBrowse(); }
+      else if (e.key.length === 1 && this.privateCodeInput.length < 6) { this.privateCodeInput += e.key.toUpperCase(); this._renderMultiBrowse(); }
+      else if (e.key === 'Enter') { this._submitPrivateCode(); }
+      else if (e.key === 'Escape') { this._closePrivatePrompt(); }
+      return;
+    }
     if (this.nameInputFocused) {
       if (e.key === 'Backspace') { this.roomNameInput = this.roomNameInput.slice(0, -1); this._renderCreate(); }
       else if (e.key.length === 1 && this.roomNameInput.length < 24) { this.roomNameInput += e.key; this._renderCreate(); }
@@ -321,8 +345,11 @@ export class LobbyScene extends Phaser.Scene {
     if (this.mode === m) return;
     this.mode = m;
     this.view = 'browse';
-    this.nameInputFocused = false;
-    this.codeInputFocused = false;
+    this.nameInputFocused    = false;
+    this.codeInputFocused    = false;
+    this.pendingPrivateRoom  = null;
+    this.privateCodeFocused  = false;
+    this.listScrollOffset    = 0;
 
     const [activTab, inactTab] = m === 'solo'
       ? [this.soloTab,  this.multiTab] : [this.multiTab, this.soloTab];
@@ -348,6 +375,7 @@ export class LobbyScene extends Phaser.Scene {
   private _clearDynamic() {
     this.refreshTimer?.remove(false);
     this.refreshTimer = undefined;
+    if (this.wheelHandler) { this.input.off('wheel', this.wheelHandler); this.wheelHandler = undefined; }
     for (const obj of this.dynamicObjs) { obj.destroy(); }
     this.dynamicObjs = [];
   }
@@ -507,7 +535,6 @@ export class LobbyScene extends Phaser.Scene {
     );
     this._push(this.add.text(cx + 82, topY + 22, 'JOIN', { fontSize: '14px', color: '#88ff88', fontStyle: 'bold' }).setOrigin(0.5));
 
-    // Click outside code box to unfocus
     this.input.once('pointerdown', (ptr: Phaser.Input.Pointer) => {
       if (Math.abs(ptr.x - (cx - 40)) > 70 || Math.abs(ptr.y - (topY + 22)) > 14) {
         this.codeInputFocused = false;
@@ -526,7 +553,6 @@ export class LobbyScene extends Phaser.Scene {
 
     // ── Active Games ──────────────────────────────────────────────────────
     const pubY = createY + 52;
-
     this._push(this.add.text(cx, pubY, 'ACTIVE GAMES', { fontSize: '13px', color: C.textDim, letterSpacing: 3 }).setOrigin(0.5));
 
     const refreshBtn = this._push(this.add.rectangle(W - 80, pubY, 100, 22, 0x0d2a4a)
@@ -537,12 +563,17 @@ export class LobbyScene extends Phaser.Scene {
     );
     this._push(this.add.text(W - 80, pubY, '↻  Refresh', { fontSize: '13px', color: C.textGrey }).setOrigin(0.5));
 
-    const listTop = pubY + 16;
-    const listH   = Math.max(60, H - listTop - 16);
-    const listW   = W - 80;
+    const listW    = W - 80;
     const listLeft = 40;
 
-    // Column x positions (proportional to listW so they scale on resize)
+    // ── Filter bar ────────────────────────────────────────────────────────
+    const filterY = pubY + 18;
+    this._renderFilterBar(filterY, listLeft, listW);
+
+    // ── List panel ────────────────────────────────────────────────────────
+    const listTop = filterY + 28;
+    const listH   = Math.max(60, H - listTop - 16);
+
     const colName    = listLeft + 8;
     const colPlayers = listLeft + listW * 0.42;
     const colTeams   = listLeft + listW * 0.54;
@@ -552,15 +583,31 @@ export class LobbyScene extends Phaser.Scene {
 
     this._push(this.add.rectangle(cx, listTop + listH / 2, listW, listH, 0x08121e).setStrokeStyle(1, 0x1a3355));
 
-    // Header row
+    // Sortable column headers
     const hdrY = listTop + 11;
-    const hdrStyle = { fontSize: '11px', color: '#334455' };
-    this._push(this.add.text(colName,    hdrY, 'ROOM',    hdrStyle).setOrigin(0, 0.5));
-    this._push(this.add.text(colPlayers, hdrY, 'PLAYERS', hdrStyle).setOrigin(0.5, 0.5));
-    this._push(this.add.text(colTeams,   hdrY, 'TEAMS',   hdrStyle).setOrigin(0.5, 0.5));
-    this._push(this.add.text(colMode,    hdrY, 'MODE',    hdrStyle).setOrigin(0.5, 0.5));
-    this._push(this.add.text(colLock,    hdrY, 'ACCESS',  hdrStyle).setOrigin(0.5, 0.5));
-    this._push(this.add.text(colTime,    hdrY, 'TIME',    hdrStyle).setOrigin(1, 0.5));
+    const makeHdr = (x: number, label: string, col: SortCol, originX: number) => {
+      const isActive = this.sortCol === col;
+      const arrow    = isActive ? (this.sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+      const color    = isActive ? C.gold : '#556677';
+      const txt      = this._push(this.add.text(x, hdrY, label + arrow, {
+        fontSize: '11px', color, fontStyle: isActive ? 'bold' : 'normal',
+      }).setOrigin(originX, 0.5).setInteractive({ useHandCursor: true }));
+      txt.on('pointerover', () => txt.setStyle({ color: isActive ? C.gold : C.textGrey }));
+      txt.on('pointerout',  () => txt.setStyle({ color }));
+      txt.on('pointerdown', () => {
+        if (this.sortCol !== col) { this.sortCol = col; this.sortDir = 'asc'; }
+        else if (this.sortDir === 'asc') { this.sortDir = 'desc'; }
+        else { this.sortCol = null; }
+        this.listScrollOffset = 0;
+        this._renderMultiBrowse();
+      });
+    };
+    makeHdr(colName,    'ROOM',    'name',    0);
+    makeHdr(colPlayers, 'PLAYERS', 'players', 0.5);
+    makeHdr(colTeams,   'TEAMS',   'teams',   0.5);
+    makeHdr(colMode,    'MODE',    'mode',    0.5);
+    makeHdr(colLock,    'ACCESS',  'access',  0.5);
+    makeHdr(colTime,    'TIME',    'time',    1);
 
     // Divider below header
     const divG = this.add.graphics();
@@ -568,44 +615,263 @@ export class LobbyScene extends Phaser.Scene {
     divG.lineBetween(listLeft + 8, listTop + 20, listLeft + listW - 8, listTop + 20);
     this._push(divG);
 
-    if (this.roomList.length === 0) {
-      this._push(this.add.text(cx, listTop + listH / 2, 'No active games — create one!', { fontSize: '14px', color: '#334455' }).setOrigin(0.5));
+    // ── Rows ─────────────────────────────────────────────────────────────
+    const displayRooms  = this._getDisplayRooms();
+    const rowH          = 28;
+    const hdrHeight     = 22;
+    const availH        = listH - hdrHeight;
+    const visibleCount  = Math.max(1, Math.floor(availH / (rowH + 2)));
+    const maxOffset     = Math.max(0, displayRooms.length - visibleCount);
+    if (this.listScrollOffset > maxOffset) this.listScrollOffset = maxOffset;
+
+    if (displayRooms.length === 0) {
+      const msg = this.roomList.length === 0 ? 'No active games — create one!' : 'No rooms match current filters.';
+      this._push(this.add.text(cx, listTop + hdrHeight + availH / 2, msg, { fontSize: '14px', color: '#334455' }).setOrigin(0.5));
     } else {
-      let ry = listTop + 26;
-      for (const room of this.roomList.slice(0, 5)) {
-        const rowH  = 28;
-        const rowBg = this._push(this.add.rectangle(cx, ry + rowH / 2, listW - 16, rowH, 0x0d1f33)
+      const endIdx = Math.min(this.listScrollOffset + visibleCount, displayRooms.length);
+      let ry = listTop + hdrHeight;
+
+      for (let i = this.listScrollOffset; i < endIdx; i++) {
+        const room      = displayRooms[i];
+        const isPrivate = !room.settings.isPublic;
+        const rowBg     = this._push(this.add.rectangle(cx, ry + rowH / 2, listW - 16, rowH, 0x0d1f33)
           .setStrokeStyle(1, 0x1a3355).setInteractive({ useHandCursor: true })
           .on('pointerover', () => (rowBg as Phaser.GameObjects.Rectangle).setFillStyle(C.panelHi))
           .on('pointerout',  () => (rowBg as Phaser.GameObjects.Rectangle).setFillStyle(0x0d1f33))
-          .on('pointerdown', () => this._joinRoom(room.code))
+          .on('pointerdown', () => {
+            if (isPrivate) {
+              this.pendingPrivateRoom = room;
+              this.privateCodeInput   = '';
+              this.privateCodeFocused = true;
+              this.privateCodeError   = '';
+              this._renderMultiBrowse();
+            } else {
+              this._doJoin(room.code);
+            }
+          })
         );
 
-        const rowMid = ry + rowH / 2;
+        const rowMid  = ry + rowH / 2;
         const playing = room.state === 'PLAYING';
-
-        this._push(this.add.text(colName,    rowMid, room.name,                                                  { fontSize: '13px', color: C.text    }).setOrigin(0,   0.5));
-        this._push(this.add.text(colPlayers, rowMid, `${room.playerCount}/${room.maxPlayers}`,                   { fontSize: '13px', color: '#aaffaa' }).setOrigin(0.5, 0.5));
-        this._push(this.add.text(colTeams,   rowMid, TEAM_MODE_SHORT[room.settings.teamMode]   ?? room.settings.teamMode,   { fontSize: '13px', color: C.textGrey }).setOrigin(0.5, 0.5));
-        this._push(this.add.text(colMode,    rowMid, WIN_COND_SHORT[room.settings.winCondition] ?? room.settings.winCondition, { fontSize: '13px', color: C.textGrey }).setOrigin(0.5, 0.5));
-        this._push(this.add.text(colLock,    rowMid, room.settings.isPublic ? '🔓' : '🔒',                       { fontSize: '13px', color: C.textGrey }).setOrigin(0.5, 0.5));
-        this._push(this.add.text(colTime,    rowMid, playing ? this._formatTime(room.timeRemainingMs) : 'Lobby', { fontSize: '13px', color: playing ? '#ffdd88' : C.textDim }).setOrigin(1, 0.5));
+        this._push(this.add.text(colName,    rowMid, room.name,                                                    { fontSize: '13px', color: C.text    }).setOrigin(0,   0.5));
+        this._push(this.add.text(colPlayers, rowMid, `${room.playerCount}/${room.maxPlayers}`,                     { fontSize: '13px', color: '#aaffaa' }).setOrigin(0.5, 0.5));
+        this._push(this.add.text(colTeams,   rowMid, TEAM_MODE_SHORT[room.settings.teamMode]    ?? room.settings.teamMode,    { fontSize: '13px', color: C.textGrey }).setOrigin(0.5, 0.5));
+        this._push(this.add.text(colMode,    rowMid, WIN_COND_SHORT[room.settings.winCondition]  ?? room.settings.winCondition, { fontSize: '13px', color: C.textGrey }).setOrigin(0.5, 0.5));
+        this._push(this.add.text(colLock,    rowMid, isPrivate ? '🔒' : '🔓',                                     { fontSize: '13px', color: C.textGrey }).setOrigin(0.5, 0.5));
+        this._push(this.add.text(colTime,    rowMid, playing ? this._formatTime(room.timeRemainingMs) : 'Lobby',   { fontSize: '13px', color: playing ? '#ffdd88' : C.textDim }).setOrigin(1, 0.5));
 
         ry += rowH + 2;
       }
+
+      // Scroll controls (shown when list overflows)
+      if (displayRooms.length > visibleCount) {
+        const scrollX   = listLeft + listW - 4;
+        const scrollTop = listTop + hdrHeight;
+        const scrollBot = listTop + listH - 4;
+
+        const canUp   = this.listScrollOffset > 0;
+        const canDown = this.listScrollOffset < maxOffset;
+
+        const upTxt = this._push(this.add.text(scrollX, scrollTop + 10, '▲', {
+          fontSize: '14px', color: canUp ? C.text : '#1a3355',
+        }).setOrigin(1, 0.5));
+        if (canUp) {
+          upTxt.setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => { this.listScrollOffset--; this._renderMultiBrowse(); });
+        }
+
+        this._push(this.add.text(scrollX, (scrollTop + scrollBot) / 2,
+          `${this.listScrollOffset + 1}–${endIdx}/${displayRooms.length}`,
+          { fontSize: '10px', color: '#334455' }).setOrigin(1, 0.5));
+
+        const downTxt = this._push(this.add.text(scrollX, scrollBot - 10, '▼', {
+          fontSize: '14px', color: canDown ? C.text : '#1a3355',
+        }).setOrigin(1, 0.5));
+        if (canDown) {
+          downTxt.setInteractive({ useHandCursor: true })
+            .on('pointerdown', () => { this.listScrollOffset++; this._renderMultiBrowse(); });
+        }
+      }
     }
+
+    // Mousewheel scroll
+    this.wheelHandler = (ptr: unknown, _go: unknown, _dx: unknown, deltaY: unknown) => {
+      const p = ptr as Phaser.Input.Pointer;
+      if (p.y >= listTop && p.y <= listTop + listH) {
+        const maxOff = Math.max(0, displayRooms.length - visibleCount);
+        this.listScrollOffset = Phaser.Math.Clamp(
+          this.listScrollOffset + ((deltaY as number) > 0 ? 1 : -1), 0, maxOff,
+        );
+        this._renderMultiBrowse();
+      }
+    };
+    this.input.on('wheel', this.wheelHandler);
 
     // ── Auto-refresh every 5 s ────────────────────────────────────────────
     this.refreshTimer = this.time.addEvent({ delay: 5000, callback: () => networkManager.listRooms(), loop: true });
+
+    // ── Private room code prompt (rendered last = on top) ─────────────────
+    if (this.pendingPrivateRoom) this._renderPrivatePrompt();
+  }
+
+  // ─── Active Games helpers ─────────────────────────────────────────────────
+
+  private _getDisplayRooms(): RoomSummary[] {
+    let rooms = [...this.roomList];
+    if (this.filterAccess === 'public')  rooms = rooms.filter(r =>  r.settings.isPublic);
+    if (this.filterAccess === 'private') rooms = rooms.filter(r => !r.settings.isPublic);
+    if (this.filterTeams.size > 0)       rooms = rooms.filter(r => this.filterTeams.has(r.settings.teamMode));
+    if (this.filterMode.size > 0)        rooms = rooms.filter(r => this.filterMode.has(r.settings.winCondition));
+    if (this.filterMinSlots > 0)         rooms = rooms.filter(r => r.playerCount >= this.filterMinSlots);
+
+    if (this.sortCol !== null) {
+      const col = this.sortCol;
+      const dir = this.sortDir;
+      rooms.sort((a, b) => {
+        let av: string | number;
+        let bv: string | number;
+        switch (col) {
+          case 'name':    av = a.name.toLowerCase();         bv = b.name.toLowerCase();         break;
+          case 'players': av = a.playerCount;                bv = b.playerCount;                break;
+          case 'teams':   av = a.settings.teamMode;          bv = b.settings.teamMode;          break;
+          case 'mode':    av = a.settings.winCondition;      bv = b.settings.winCondition;      break;
+          case 'access':  av = a.settings.isPublic ? 1 : 0; bv = b.settings.isPublic ? 1 : 0; break;
+          case 'time':    av = a.timeRemainingMs;            bv = b.timeRemainingMs;            break;
+          default:        return 0;
+        }
+        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+        return dir === 'asc' ? cmp : -cmp;
+      });
+    }
+    return rooms;
+  }
+
+  private _renderFilterBar(y: number, listLeft: number, listW: number): void {
+    void listW;
+    const btnH = 20;
+    let bx = listLeft;
+
+    const pill = (label: string, w: number, active: boolean, onClick: () => void) => {
+      const bg = this._push(this.add.rectangle(bx + w / 2, y, w, btnH,
+        active ? C.panelHi : 0x0d1f33)
+        .setStrokeStyle(1, active ? C.border : C.borderDim)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => { onClick(); this.listScrollOffset = 0; this._renderMultiBrowse(); })
+        .on('pointerover', () => (bg as Phaser.GameObjects.Rectangle).setFillStyle(active ? C.panelHi : 0x162244))
+        .on('pointerout',  () => (bg as Phaser.GameObjects.Rectangle).setFillStyle(active ? C.panelHi : 0x0d1f33))
+      );
+      this._push(this.add.text(bx + w / 2, y, label, {
+        fontSize: '10px', color: active ? C.white : C.textGrey,
+      }).setOrigin(0.5));
+      bx += w + 2;
+    };
+    const gap = (n: number) => { bx += n; };
+
+    // Access
+    pill('All',     36, this.filterAccess === 'all',     () => { this.filterAccess = 'all'; });
+    pill('Public',  44, this.filterAccess === 'public',  () => { this.filterAccess = 'public'; });
+    pill('Private', 46, this.filterAccess === 'private', () => { this.filterAccess = 'private'; });
+    gap(10);
+
+    // Teams
+    pill('FFA',   34, this.filterTeams.has('ffa'),   () => this._toggleFilter(this.filterTeams, 'ffa'));
+    pill('2v2',   34, this.filterTeams.has('2team'), () => this._toggleFilter(this.filterTeams, '2team'));
+    pill('4-way', 40, this.filterTeams.has('4team'), () => this._toggleFilter(this.filterTeams, '4team'));
+    gap(10);
+
+    // Mode
+    pill('Timer', 40, this.filterMode.has('timer'),      () => this._toggleFilter(this.filterMode, 'timer'));
+    pill('Dom.',  36, this.filterMode.has('domination'),  () => this._toggleFilter(this.filterMode, 'domination'));
+    pill('DM',    30, this.filterMode.has('deathmatch'),  () => this._toggleFilter(this.filterMode, 'deathmatch'));
+    gap(10);
+
+    // Min players
+    pill('1+', 28, this.filterMinSlots === 1, () => { this.filterMinSlots = this.filterMinSlots === 1 ? 0 : 1; });
+    pill('2+', 28, this.filterMinSlots === 2, () => { this.filterMinSlots = this.filterMinSlots === 2 ? 0 : 2; });
+    pill('4+', 28, this.filterMinSlots === 4, () => { this.filterMinSlots = this.filterMinSlots === 4 ? 0 : 4; });
+  }
+
+  private _toggleFilter(set: Set<string>, key: string): void {
+    if (set.has(key)) set.delete(key); else set.add(key);
+  }
+
+  // ─── Private room code prompt ─────────────────────────────────────────────
+
+  private _renderPrivatePrompt(): void {
+    const { cx, H, W } = this;
+    // Dim overlay
+    this._push(this.add.rectangle(cx, H / 2, W, H, 0x000000).setAlpha(0.72));
+
+    // Box
+    const boxW = 300; const boxH = 160; const boxY = H / 2;
+    this._push(this.add.rectangle(cx, boxY, boxW, boxH, C.panel).setStrokeStyle(2, C.border));
+
+    const room = this.pendingPrivateRoom!;
+    this._push(this.add.text(cx, boxY - 56, '🔒 PRIVATE ROOM', { fontSize: '12px', color: C.textDim, letterSpacing: 2 }).setOrigin(0.5));
+    this._push(this.add.text(cx, boxY - 38, this._truncate(room.name, 26), { fontSize: '14px', color: C.text }).setOrigin(0.5));
+    this._push(this.add.text(cx, boxY - 16, 'Enter the 6-digit room code:', { fontSize: '12px', color: C.textDim }).setOrigin(0.5));
+
+    // Code input
+    this._push(this.add.rectangle(cx, boxY + 8, 172, 30, 0x08121e)
+      .setStrokeStyle(1, this.privateCodeFocused ? C.border : 0x2244aa)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => { this.privateCodeFocused = true; this._renderMultiBrowse(); })
+    );
+    this._push(this.add.text(cx, boxY + 8, this.privateCodeInput || '_ _ _ _ _ _', {
+      fontSize: '16px', color: this.privateCodeInput ? C.white : '#334455', fontStyle: 'bold', letterSpacing: 4,
+    }).setOrigin(0.5));
+
+    if (this.privateCodeError) {
+      this._push(this.add.text(cx, boxY + 30, this.privateCodeError, { fontSize: '11px', color: '#ff6666' }).setOrigin(0.5));
+    }
+
+    // Buttons
+    const submitBtn = this._push(this.add.rectangle(cx - 40, boxY + 54, 70, 26, C.greenBg)
+      .setStrokeStyle(1, C.green).setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this._submitPrivateCode())
+      .on('pointerover', () => (submitBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.greenHi))
+      .on('pointerout',  () => (submitBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.greenBg))
+    );
+    this._push(this.add.text(cx - 40, boxY + 54, 'Join', { fontSize: '13px', color: '#88ff88', fontStyle: 'bold' }).setOrigin(0.5));
+
+    const cancelBtn = this._push(this.add.rectangle(cx + 44, boxY + 54, 68, 26, C.panel)
+      .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this._closePrivatePrompt())
+      .on('pointerover', () => (cancelBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panelHi))
+      .on('pointerout',  () => (cancelBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panel))
+    );
+    this._push(this.add.text(cx + 44, boxY + 54, 'Cancel', { fontSize: '13px', color: C.textGrey }).setOrigin(0.5));
+  }
+
+  private _submitPrivateCode(): void {
+    const entered = this.privateCodeInput.trim().toUpperCase();
+    if (entered.length < 6) {
+      this.privateCodeError = 'Please enter all 6 characters.';
+      this._renderMultiBrowse();
+      return;
+    }
+    if (entered !== this.pendingPrivateRoom!.code.toUpperCase()) {
+      this.privateCodeError = 'Incorrect code. Try again.';
+      this.privateCodeInput = '';
+      this._renderMultiBrowse();
+      return;
+    }
+    const code = this.pendingPrivateRoom!.code;
+    this._closePrivatePrompt();
+    this._doJoin(code);
+  }
+
+  private _closePrivatePrompt(): void {
+    this.pendingPrivateRoom = null;
+    this.privateCodeInput   = '';
+    this.privateCodeFocused = false;
+    this.privateCodeError   = '';
+    this._renderMultiBrowse();
   }
 
   private _joinByCode() {
     const code = this.joinCodeInput.trim().toUpperCase();
     if (code.length < 1) return;
-    this._doJoin(code);
-  }
-
-  private _joinRoom(code: string) {
     this._doJoin(code);
   }
 
@@ -770,7 +1036,7 @@ export class LobbyScene extends Phaser.Scene {
     // Back button
     const backBtn = this._push(this.add.rectangle(cx, gy + 50, 120, 28, C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => { this.view = 'browse'; this.nameInputFocused = false; this._renderMultiBrowse(); })
+      .on('pointerdown', () => { this.view = 'browse'; this.nameInputFocused = false; this.pendingPrivateRoom = null; this._renderMultiBrowse(); })
       .on('pointerover', () => (backBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panelHi))
       .on('pointerout',  () => (backBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panel))
     );
@@ -872,6 +1138,7 @@ export class LobbyScene extends Phaser.Scene {
       .on('pointerdown', () => {
         networkManager.leaveRoom();
         this.view = 'browse';
+        this.pendingPrivateRoom = null;
         this._renderMultiBrowse();
         networkManager.listRooms();
       })
