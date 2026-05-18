@@ -96,8 +96,9 @@ export class GameScene extends Phaser.Scene {
   // Timer / game over
   private gameTimer    = GAME_DURATION_MS;
   private gameOver     = false;
-  private timerText!:   Phaser.GameObjects.Text;
-  private scoreText!:   Phaser.GameObjects.Text;
+  private timerText!:    Phaser.GameObjects.Text;
+  private scoreText!:    Phaser.GameObjects.Text;
+  private spectatorText!: Phaser.GameObjects.Text;
   private gameOverObjs: Phaser.GameObjects.GameObject[] = [];
   private initData: GameSceneInitData = {};
 
@@ -232,8 +233,19 @@ export class GameScene extends Phaser.Scene {
     this.pillboxBullets.update(delta);
     this.remoteBullets?.update(delta);
     this.clearForestUnderBullets();
-    this.pillboxes.update(delta, this.tank.x, this.tank.y, this.pillboxBullets, inForest,
-      (px, py) => this.soundManager.playPillboxFire(this.soundDist(px, py)));
+
+    if (!this.multiplayerMode || networkManager.isHost) {
+      const targets: { x: number; y: number; hidden?: boolean }[] = [
+        { x: this.tank.x, y: this.tank.y, hidden: inForest },
+        ...(this.ghostManager?.getAlivePositions() ?? []),
+      ];
+      this.pillboxes.update(delta, targets, this.pillboxBullets,
+        (px, py, idx, ang) => {
+          this.soundManager.playPillboxFire(this.soundDist(px, py));
+          if (this.multiplayerMode) networkManager.sendPillboxFire(idx, ang);
+        });
+    }
+
     this.builder.update(delta);
     this.ghostManager?.update();
 
@@ -244,7 +256,7 @@ export class GameScene extends Phaser.Scene {
     this.updateMinimap();
     this.updateHUD();
 
-    // 20 Hz tank state send
+    // 20 Hz state send
     if (this.multiplayerMode) {
       this.mpSendAccum += delta;
       if (this.mpSendAccum >= 50) {
@@ -261,6 +273,9 @@ export class GameScene extends Phaser.Scene {
           mines:    this.tank.mines,
           trees:    this.tank.trees,
         });
+        networkManager.sendSoldierState(
+          this.builder.x, this.builder.y, this.builder.isBusy,
+        );
       }
     }
   }
@@ -422,6 +437,20 @@ export class GameScene extends Phaser.Scene {
       this.triggerGameOverMP(d);
     });
 
+    // ── Soldier state (builder visibility) ───────────────────────────────────
+    this._addNetHandler('soldierState', (d) => {
+      this.ghostManager!.updateSoldier(d.playerId, d.x, d.y, d.active);
+    });
+
+    // ── Pillbox fire relay (non-host: apply angle + fire locally) ────────────
+    this._addNetHandler('pillboxFire', (d) => {
+      const pill = this.pillboxes.pills[d.pillIndex];
+      if (!pill || !pill.alive || pill.owner === 'friendly') return;
+      pill.setFacing(d.angleDeg);
+      pill.fireAt(d.angleDeg, this.pillboxBullets);
+      this.soundManager.playPillboxFire(this.soundDist(pill.x, pill.y));
+    });
+
     // ── Spectator keys ─────────────────────────────────────────────────────────
     this.input.keyboard!.on('keydown-Q', () => {
       if (this.spectatorMode) {
@@ -512,11 +541,14 @@ export class GameScene extends Phaser.Scene {
     const aliveIds = this.ghostManager?.getAlivePlayerIds() ?? [];
     if (aliveIds.length === 0) {
       this.cameras.main.startFollow(this.tank.sprite, true, 0.12, 0.12);
+      this.spectatorText.setVisible(false);
       return;
     }
     const idx    = ((this.spectatorTargetIdx % aliveIds.length) + aliveIds.length) % aliveIds.length;
     const target = this.ghostManager?.getSpriteByPlayerId(aliveIds[idx]);
     if (target) this.cameras.main.startFollow(target, true, 0.12, 0.12);
+    const name = networkManager.players.get(aliveIds[idx])?.name ?? 'Unknown';
+    this.spectatorText.setText(`SPECTATING: ${name}   [Q] / [E] to switch`).setVisible(true);
   }
 
   // ─── Map ──────────────────────────────────────────────────────────────────
@@ -724,6 +756,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.multiplayerMode) {
       this.spectatorMode = false;
+      this.spectatorText.setVisible(false);
       this.cameras.main.startFollow(this.tank.sprite, true, 0.12, 0.12);
     }
   }
@@ -879,15 +912,19 @@ export class GameScene extends Phaser.Scene {
     const style = { fontSize: '14px', color: '#ffffff', backgroundColor: '#00000099', padding: { x: 6, y: 4 } };
     this.timerText = this.add.text(0, 8, '', style).setScrollFactor(0).setDepth(30);
     this.scoreText = this.add.text(0, 32, '', style).setScrollFactor(0).setDepth(30);
+    this.spectatorText = this.add.text(0, 20, '', {
+      fontSize: '12px', color: '#ffdd88', backgroundColor: '#00000099', padding: { x: 6, y: 4 },
+    }).setScrollFactor(0).setDepth(30).setOrigin(0.5, 0).setVisible(false);
     this.repositionTimerHUD();
     this.scale.on('resize', () => this.repositionTimerHUD());
-    this.uiCam.ignore([this.timerText, this.scoreText]);
+    this.uiCam.ignore([this.timerText, this.scoreText, this.spectatorText]);
   }
 
   private repositionTimerHUD() {
     const vw = this.scale.width - PANEL_WIDTH;
     this.timerText.setX(vw - 140);
     this.scoreText.setX(vw - 140);
+    this.spectatorText?.setX(vw / 2);
   }
 
   private countScore(): { friendly: number; total: number } {

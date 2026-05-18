@@ -9,11 +9,12 @@ import type {
   C2S_TileChanged, C2S_PillboxUpdate, C2S_BaseUpdate,
   C2S_MineAdded, C2S_MineDetonated, C2S_BoatAdded,
   C2S_BulletFired, C2S_BulletHit, C2S_PlayerKill,
+  C2S_SoldierState,
   TankState,
   S2C_RoomJoined, S2C_PlayerJoined, S2C_PlayerGhosted,
   S2C_PlayerReconnected, S2C_PlayerRemoved, S2C_HostChanged,
   S2C_SettingsUpdated, S2C_TileChanged, S2C_BulletFired,
-  S2C_MineDetonated,
+  S2C_MineDetonated, S2C_SoldierState, S2C_PillboxFire,
 } from './types.js';
 import type { GameRoom } from './GameRoom.js';
 
@@ -256,6 +257,27 @@ io.on('connection', (socket) => {
     const room = lobbyManager.getRoomBySocketId(socket.id);
     if (!room || room.state !== 'PLAYING') return;
     socket.emit('stateSnapshot', room.getSnapshot());
+  });
+
+  // ─── Soldier state relay (volatile) ──────────────────────────────────────
+
+  socket.on('soldierState', (data: C2S_SoldierState) => {
+    const room = lobbyManager.getRoomBySocketId(socket.id);
+    if (!room || room.state !== 'PLAYING') return;
+    const playerId = room.socketToPlayer.get(socket.id);
+    if (!playerId) return;
+    const payload: S2C_SoldierState = { ...data, playerId };
+    socket.volatile.to(room.roomId).emit('soldierState', payload);
+  });
+
+  // ─── Pillbox fire relay (host-only, broadcast to room) ───────────────────
+
+  socket.on('pillboxFire', (data: S2C_PillboxFire) => {
+    const room = lobbyManager.getRoomBySocketId(socket.id);
+    if (!room || room.state !== 'PLAYING') return;
+    const playerId = room.socketToPlayer.get(socket.id);
+    if (playerId !== room.hostPlayerId) return;
+    socket.to(room.roomId).emit('pillboxFire', data);
   });
 
   // ─── Tank state relay (volatile — drops on congestion) ───────────────────

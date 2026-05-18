@@ -301,6 +301,10 @@ export interface S2C_GameOver {
   }[];
 }
 
+export interface C2S_SoldierState { x: number; y: number; active: boolean; }
+export interface S2C_SoldierState { playerId: string; x: number; y: number; active: boolean; }
+export interface S2C_PillboxFire  { pillIndex: number; angleDeg: number; }
+
 export interface S2C_Error {
   message: string;
 }

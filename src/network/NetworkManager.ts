@@ -26,6 +26,8 @@ import type {
   S2C_TimeUpdate,
   S2C_PlayerKill,
   S2C_GameOver,
+  S2C_SoldierState,
+  S2C_PillboxFire,
 } from './types.ts';
 
 // ---------------------------------------------------------------------------
@@ -55,6 +57,8 @@ export type NetEvents = {
   timeUpdate:        S2C_TimeUpdate;
   playerKill:        S2C_PlayerKill;
   gameOver:          S2C_GameOver;
+  soldierState:      S2C_SoldierState;
+  pillboxFire:       S2C_PillboxFire;
   kicked:            void;
   error:             { message: string };
 };
@@ -91,6 +95,8 @@ function makeListenerMap(): ListenerMap {
     timeUpdate:        new Set(),
     playerKill:        new Set(),
     gameOver:          new Set(),
+    soldierState:      new Set(),
+    pillboxFire:       new Set(),
     kicked:            new Set(),
     error:             new Set(),
   };
@@ -105,7 +111,9 @@ const SERVER_EVENTS: (keyof NetEvents)[] = [
   'playerReconnected', 'playerRemoved', 'settingsUpdated', 'hostChanged',
   'gameStart', 'stateSnapshot', 'tankState', 'bulletFired', 'bulletHit',
   'tileChanged', 'pillboxUpdate', 'baseUpdate', 'mineAdded', 'mineDetonated',
-  'boatAdded', 'timeUpdate', 'playerKill', 'gameOver', 'kicked', 'error',
+  'boatAdded', 'timeUpdate', 'playerKill', 'gameOver',
+  'soldierState', 'pillboxFire',
+  'kicked', 'error',
 ];
 
 const SERVER_URL = import.meta.env.PROD
@@ -259,6 +267,14 @@ export class NetworkManager {
 
   sendBoatAdded(tileX: number, tileY: number): void {
     this.socket?.emit('boatAdded', { tileX, tileY });
+  }
+
+  sendSoldierState(x: number, y: number, active: boolean): void {
+    this.socket?.volatile.emit('soldierState', { x, y, active });
+  }
+
+  sendPillboxFire(pillIndex: number, angleDeg: number): void {
+    this.socket?.emit('pillboxFire', { pillIndex, angleDeg });
   }
 
   returnToLobby(): void {

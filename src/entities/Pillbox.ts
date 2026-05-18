@@ -85,13 +85,27 @@ export class Pillbox {
     this.sprite.destroy();
   }
 
+  setFacing(angleDeg: number) {
+    this.facing = angleDeg;
+    this.sprite.angle = angleDeg;
+  }
+
+  fireAt(angleDeg: number, bullets: BulletManager) {
+    const rad = Phaser.Math.DegToRad(angleDeg - 90);
+    bullets.fire(
+      this.x + Math.cos(rad) * 18,
+      this.y + Math.sin(rad) * 18,
+      angleDeg,
+    );
+  }
+
   update(
     delta: number,
     targetX: number,
     targetY: number,
     bullets: BulletManager,
     targetHidden = false,
-    onShot?: (x: number, y: number) => void,
+    onShot?: (x: number, y: number, angleDeg: number) => void,
   ) {
     if (!this.alive || this.owner === 'friendly') return;
 
@@ -114,13 +128,8 @@ export class Pillbox {
       const t = (this.health - 1) / (MAX_HEALTH - 1); // 1.0 at full, 0.0 at 1 HP
       this.cooldown = COOLDOWN_CRIT + t * (COOLDOWN_FULL - COOLDOWN_CRIT);
 
-      const rad = Phaser.Math.DegToRad(snapped - 90);
-      bullets.fire(
-        this.x + Math.cos(rad) * 18,
-        this.y + Math.sin(rad) * 18,
-        snapped,
-      );
-      onShot?.(this.x, this.y);
+      this.fireAt(snapped, bullets);
+      onShot?.(this.x, this.y, snapped);
     }
   }
 }
@@ -157,14 +166,29 @@ export class PillboxManager {
 
   update(
     delta: number,
-    targetX: number,
-    targetY: number,
+    targets: { x: number; y: number; hidden?: boolean }[],
     bullets: BulletManager,
-    targetHidden = false,
-    onShot?: (x: number, y: number) => void,
+    onShot?: (x: number, y: number, pillIndex: number, angleDeg: number) => void,
   ) {
-    for (const pill of this.pills) {
-      pill.update(delta, targetX, targetY, bullets, targetHidden, onShot);
+    for (let i = 0; i < this.pills.length; i++) {
+      const pill = this.pills[i];
+      if (targets.length === 0) {
+        pill.update(delta, 0, 0, bullets, true);
+        continue;
+      }
+      let nearX = targets[0].x, nearY = targets[0].y, nearHidden = !!targets[0].hidden;
+      let nearDist = Math.hypot(targets[0].x - pill.x, targets[0].y - pill.y);
+      for (let j = 1; j < targets.length; j++) {
+        const d = Math.hypot(targets[j].x - pill.x, targets[j].y - pill.y);
+        if (d < nearDist) {
+          nearDist = d;
+          nearX = targets[j].x;
+          nearY = targets[j].y;
+          nearHidden = !!targets[j].hidden;
+        }
+      }
+      pill.update(delta, nearX, nearY, bullets, nearHidden,
+        (x, y, ang) => onShot?.(x, y, i, ang));
     }
   }
 

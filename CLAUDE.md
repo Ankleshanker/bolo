@@ -17,7 +17,7 @@ A browser-based clone of the 1987/1993 classic Bolo. 2D tile-based tank combat o
 - [x] Phase 3 — Collision: tank vs walls/pillboxes, bullets vs terrain/pillboxes, sea sink animation
 - [x] Phase 4 — Combat: bullets, pillbox AI, health, capture, crack overlay, pill pickups
 - [x] Phase 5 — Builder & bases: tree harvest, road/wall/pillbox placement, mines, resupply
-- [ ] Phase 6 — Multiplayer: Socket.io server + client sync, lobby
+- [x] Phase 6 — Multiplayer: Socket.io server + client sync, lobby, builder sync, pillbox host relay, spectator mode
 - [~] Phase 7 — Polish: minimap ✓, sound ✓, base capture ✓, organic map generator ✓, settings UI ✓; pixel art pass, map selector, win condition remaining
 
 ## Library Routing

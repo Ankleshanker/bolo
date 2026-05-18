@@ -41,3 +41,6 @@ export interface S2C_BoatAdded extends BoatState {}
 export interface S2C_TimeUpdate { remaining: number; }
 export interface S2C_PlayerKill { killerId: string; killerName: string; victimId: string; victimName: string; }
 export interface S2C_GameOver { reason: 'timer'|'domination'|'deathmatch'|'lastPlayer'; winnerId: string|null; winnerName: string; scores: {playerId: string; name: string; teamIndex: number; kills: number; deaths: number; objectives: number;}[]; }
+export interface C2S_SoldierState { x: number; y: number; active: boolean; }
+export interface S2C_SoldierState { playerId: string; x: number; y: number; active: boolean; }
+export interface S2C_PillboxFire { pillIndex: number; angleDeg: number; }
