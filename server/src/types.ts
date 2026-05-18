@@ -33,14 +33,15 @@ export interface PlayerInfo {
 }
 
 export interface RoomSummary {
-  roomId:      string;
-  code:        string;           // 6-char uppercase alphanumeric
-  name:        string;
-  hostName:    string;
-  playerCount: number;
-  maxPlayers:  number;
-  state:       RoomState;
-  settings:    RoomSettings;
+  roomId:          string;
+  code:            string;           // 6-char uppercase alphanumeric
+  name:            string;
+  hostName:        string;
+  playerCount:     number;
+  maxPlayers:      number;
+  state:           RoomState;
+  settings:        RoomSettings;
+  timeRemainingMs: number;           // ms left on the game clock; full timer if LOBBY, 0 if ENDED
 }
 
 // ─── World state ──────────────────────────────────────────────────────────────

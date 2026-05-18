@@ -282,14 +282,17 @@ export class GameRoom {
     const host = this.players.get(this.hostPlayerId);
     const connected = [...this.players.values()].filter(p => p.connected);
     return {
-      roomId:      this.roomId,
-      code:        this.code,
-      name:        this.roomName,
-      hostName:    host?.name ?? '',
-      playerCount: connected.length,
-      maxPlayers:  this.settings.maxPlayers,
-      state:       this.state,
-      settings:    this.settings,
+      roomId:          this.roomId,
+      code:            this.code,
+      name:            this.roomName,
+      hostName:        host?.name ?? '',
+      playerCount:     connected.length,
+      maxPlayers:      this.settings.maxPlayers,
+      state:           this.state,
+      settings:        this.settings,
+      timeRemainingMs: this.state === 'PLAYING' ? Math.max(0, this.timerMs)
+                     : this.state === 'LOBBY'   ? this.settings.timerSeconds * 1000
+                     : 0,
     };
   }
 

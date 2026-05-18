@@ -3,7 +3,7 @@ export type WinCondition = 'timer' | 'domination' | 'deathmatch';
 export type RoomState    = 'LOBBY' | 'PLAYING' | 'ENDED';
 export interface RoomSettings { mapType: 'procedural'|'bmap'; mapName: string; seed: number; teamMode: TeamMode; winCondition: WinCondition; friendlyFire: boolean; maxPlayers: number; isPublic: boolean; timerSeconds: number; mapData?: string; }
 export interface PlayerInfo { playerId: string; name: string; color: string; teamIndex: number; connected: boolean; disconnectedAt?: number; kills: number; deaths: number; }
-export interface RoomSummary { roomId: string; code: string; name: string; hostName: string; playerCount: number; maxPlayers: number; state: RoomState; settings: RoomSettings; }
+export interface RoomSummary { roomId: string; code: string; name: string; hostName: string; playerCount: number; maxPlayers: number; state: RoomState; settings: RoomSettings; timeRemainingMs: number; }
 export interface TileDiff { tileX: number; tileY: number; displayTile: number; }
 export interface PillboxState { index: number; ownerId: string|null; health: number; alive: boolean; }
 export interface BaseState { index: number; ownerId: string|null; health: number; shells: number; mines: number; }
