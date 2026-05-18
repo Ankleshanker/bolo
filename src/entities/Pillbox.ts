@@ -93,6 +93,20 @@ export class Pillbox {
     this.sprite.destroy();
   }
 
+  setFacing(angleDeg: number) {
+    this.facing = angleDeg;
+    this.sprite.angle = angleDeg;
+  }
+
+  fireAt(angleDeg: number, bullets: BulletManager) {
+    const rad = Phaser.Math.DegToRad(angleDeg - 90);
+    bullets.fire(
+      this.x + Math.cos(rad) * 18,
+      this.y + Math.sin(rad) * 18,
+      angleDeg,
+    );
+  }
+
   /**
    * Run pillbox AI for one frame.
    *
@@ -137,12 +151,7 @@ export class Pillbox {
       const t = (this.health - 1) / (MAX_HEALTH - 1); // 1.0 at full, 0.0 at 1 HP
       this.cooldown = COOLDOWN_CRIT + t * (COOLDOWN_FULL - COOLDOWN_CRIT);
 
-      const rad = Phaser.Math.DegToRad(snapped - 90);
-      bullets.fire(
-        this.x + Math.cos(rad) * 18,
-        this.y + Math.sin(rad) * 18,
-        snapped,
-      );
+      this.fireAt(snapped, bullets);
       onShot?.(this.x, this.y, snapped);
     }
   }

@@ -42,6 +42,8 @@ export class Builder {
   }
 
   get isBusy() { return this._busy; }
+  get x() { return this.sprite.x; }
+  get y() { return this.sprite.y; }
 
   /**
    * @param toX/toY      World position of the target tile centre.

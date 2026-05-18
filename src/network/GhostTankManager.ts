@@ -28,6 +28,7 @@ interface GhostTank {
   teamIndex: number;
   tint: number;
   name: string;
+  soldierSprite: Phaser.GameObjects.Sprite | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +138,7 @@ export class GhostTankManager {
       teamIndex,
       tint,
       name,
+      soldierSprite: null,
     };
 
     this.ghosts.set(playerId, ghost);
@@ -150,6 +152,7 @@ export class GhostTankManager {
     ghost.nameLabel.destroy();
     ghost.healthBar.destroy();
     ghost.healthBarBg.destroy();
+    ghost.soldierSprite?.destroy();
     this.ghosts.delete(playerId);
   }
 
@@ -292,6 +295,32 @@ export class GhostTankManager {
     }
   }
 
+  updateSoldier(playerId: string, x: number, y: number, active: boolean): void {
+    const ghost = this.ghosts.get(playerId);
+    if (!ghost) return;
+    if (active) {
+      if (!ghost.soldierSprite) {
+        ghost.soldierSprite = this.scene.add.sprite(x, y, 'soldier')
+          .setDepth(7).setScale(1.5).setTint(ghost.tint);
+      }
+      ghost.soldierSprite.setPosition(x, y).setVisible(true);
+    } else {
+      ghost.soldierSprite?.setVisible(false);
+    }
+  }
+
+  /** Returns positions of all interpolated alive ghosts — for host pillbox targeting. */
+  getAlivePositions(): { x: number; y: number; hidden: boolean }[] {
+    const out: { x: number; y: number; hidden: boolean }[] = [];
+    for (const ghost of this.ghosts.values()) {
+      const newest = ghost.snapshots[ghost.snapshots.length - 1];
+      if (newest?.alive) {
+        out.push({ x: ghost.interpolated.x, y: ghost.interpolated.y, hidden: newest.inForest });
+      }
+    }
+    return out;
+  }
+
   /** Returns all ghost sprites — use for bullet-collision overlap detection. */
   getSprites(): Phaser.Physics.Arcade.Sprite[] {
     return Array.from(this.ghosts.values()).map(g => g.sprite);
@@ -346,6 +375,7 @@ export class GhostTankManager {
       ghost.nameLabel.destroy();
       ghost.healthBar.destroy();
       ghost.healthBarBg.destroy();
+      ghost.soldierSprite?.destroy();
     }
     this.ghosts.clear();
   }
