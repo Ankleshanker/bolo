@@ -19,15 +19,14 @@ Wrangler reads `wrangler.jsonc`, uploads `dist/` as a SPA (`not_found_handling: 
 ## Server — AWS Lightsail (Docker)
 
 **Host:** `ubuntu@api.bolo-online.com` (also reachable at `100.50.52.68`)  
-**SSH key:** `lightsail.pem` — confirmed location: `C:\Users\BenFeingoldThoryn\AppData\Local\Temp\lightsail.pem`  
-Also present (gitignored) at repo root as `LightsailDefaultKey-us-east-1.pem` if copied there.  
+**SSH key:** `C:\Users\BenFeingoldThoryn\OneDrive - Lincoln Institute of Land Policy\Desktop\Claude Cowork\Projects\Personal\Bolo\LightsailDefaultKey-us-east-1.pem` (gitignored)  
 **Server path:** `/opt/bolo`  
 **Health endpoint:** `https://api.bolo-online.com/health`
 
 ### Deploy command
 
 ```bash
-ssh -i "C:\Users\BenFeingoldThoryn\AppData\Local\Temp\lightsail.pem" \
+ssh -i "C:\Users\BenFeingoldThoryn\OneDrive - Lincoln Institute of Land Policy\Desktop\Claude Cowork\Projects\Personal\Bolo\LightsailDefaultKey-us-east-1.pem" \
   -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 \
   ubuntu@api.bolo-online.com \
   "cd /opt/bolo && git pull && docker compose up -d --build"
@@ -36,7 +35,7 @@ ssh -i "C:\Users\BenFeingoldThoryn\AppData\Local\Temp\lightsail.pem" \
 ### Verify
 
 ```bash
-ssh -i "C:\Users\BenFeingoldThoryn\AppData\Local\Temp\lightsail.pem" \
+ssh -i "C:\Users\BenFeingoldThoryn\OneDrive - Lincoln Institute of Land Policy\Desktop\Claude Cowork\Projects\Personal\Bolo\LightsailDefaultKey-us-east-1.pem" \
   ubuntu@api.bolo-online.com \
   "curl -sf https://api.bolo-online.com/health"
 # Expected: {"status":"ok","players":<n>}

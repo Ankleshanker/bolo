@@ -31,13 +31,11 @@ npx wrangler deploy
 
 ```
 Host: ubuntu@api.bolo-online.com  (also reachable at 100.50.52.68)
-Key:  C:\Users\BenFeingoldThoryn\AppData\Local\Temp\lightsail.pem
+Key:  C:\Users\BenFeingoldThoryn\OneDrive - Lincoln Institute of Land Policy\Desktop\Claude Cowork\Projects\Personal\Bolo\LightsailDefaultKey-us-east-1.pem  (gitignored)
 ```
 
-> **Note:** The key is in `AppData\Local\Temp`, which Windows may clear. Back it up to `~\.ssh\` or the repo root (gitignored).
-
 ```bash
-ssh -i "C:\Users\BenFeingoldThoryn\AppData\Local\Temp\lightsail.pem" \
+ssh -i "C:\Users\BenFeingoldThoryn\OneDrive - Lincoln Institute of Land Policy\Desktop\Claude Cowork\Projects\Personal\Bolo\LightsailDefaultKey-us-east-1.pem" \
   -o StrictHostKeyChecking=accept-new ubuntu@api.bolo-online.com \
   "cd /opt/bolo && git pull && docker compose up -d --build"
 ```
