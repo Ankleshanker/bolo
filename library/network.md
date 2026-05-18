@@ -96,7 +96,7 @@ sendBulletHit(targetId, damage)
 sendPlayerKillSelf(killerId)                 // victim reports own death
 sendTileChanged(tileX, tileY, tile)
 sendPillboxUpdate(idx, ownerId, health, alive)
-sendBaseUpdate(idx, ownerId)
+sendBaseUpdate(idx, ownerId, health, shells, mines)
 sendMineAdded(tileX, tileY)
 sendMineDetonated(tileX, tileY)
 sendBoatAdded(tileX, tileY)
@@ -161,7 +161,7 @@ States: `LOBBY → PLAYING → ENDED`
 `getSnapshot(): S2C_StateSnapshot` — used for late joiners. Contains:
 - `terrainDiffs[]` — every tile mutated since game start; deduplicated by `(tileX, tileY)` — a later mutation to the same tile overwrites the earlier entry
 - `pillboxStates[]` — all known pill states (index, owner, health, alive)
-- `baseStates[]` — all known base states (index, owner)
+- `baseStates[]` — all known base states (index, ownerId, health, shells, mines)
 - `mines[]` — all active mines; entries removed on `mineDetonated`
 - `boats[]` — all placed boats; entries pruned when their tile is overwritten via `updateTileChanged()` (a tile mutation means the boat is gone)
 - `tankStates[]` — last known tank state per player
@@ -191,7 +191,7 @@ States: `LOBBY → PLAYING → ENDED`
 | `playerKill` | `{ victimId, killerId? }` | Shooter omits killerId; victim sets both |
 | `tileChanged` | `{ tileX, tileY, displayTile }` | Relayed + stored in snapshot |
 | `pillboxUpdate` | `{ index, ownerId, health, alive }` | Relayed + stored in snapshot |
-| `baseUpdate` | `{ index, ownerId }` | Relayed + stored in snapshot |
+| `baseUpdate` | `{ index, ownerId, health, shells, mines }` | Relayed + stored in snapshot; sent on capture, neutralize, and each MP refuel tick |
 | `mineAdded` | `{ tileX, tileY, ownerPlayerId }` | Relayed + stored in snapshot |
 | `mineDetonated` | `{ tileX, tileY }` | Relayed + snapshot mine removed |
 | `boatAdded` | `{ tileX, tileY }` | Relayed + stored in snapshot |
@@ -221,7 +221,7 @@ States: `LOBBY → PLAYING → ENDED`
 | `bulletHit` | `{ targetId, damage, shooterId }` | |
 | `tileChanged` | `{ playerId, tileX, tileY, displayTile }` | |
 | `pillboxUpdate` | `{ index, ownerId, health, alive }` | |
-| `baseUpdate` | `{ index, ownerId }` | |
+| `baseUpdate` | `{ index, ownerId, health, shells, mines }` | |
 | `mineAdded` | `{ tileX, tileY, ownerPlayerId }` | |
 | `mineDetonated` | `{ tileX, tileY }` | |
 | `boatAdded` | `{ tileX, tileY }` | |
