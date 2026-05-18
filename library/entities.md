@@ -161,9 +161,14 @@ Object pool of `Phaser.Physics.Arcade.Sprite` (`'bullet'`). Instances in GameSce
 | `pillboxBullets` | `groundLayer` | Kill bullet (no terrain damage) |
 | `pillboxBullets` | `tank.sprite` | Damage tank; kill bullet |
 | `remoteBullets` | `groundLayer` | Kill bullet (no terrain damage); no tile effect |
-| Any active bullet | Forest tile (frame check) | Forest → Grass; kill bullet |
+| `playerBullets` / `pillboxBullets` | Forest tile (frame check) | Forest → Grass; kill bullet; broadcast `tileChanged` |
+| `remoteBullets` | Forest tile (frame check + kill-zone registry) | Kill bullet; no re-broadcast (shooter already sent `tileChanged`) |
 
 Forest tiles are not in `COLLISION_TILES`, so they're checked programmatically each frame in `clearForestUnderBullets()`.
+
+**Remote-bullet forest kill — race condition:** The shooter broadcasts `tileChanged` the moment their `playerBullet` hits a forest. On the observer's client, that message arrives via the JS event loop (macrotask) and clears the tile *before* the next `update()` frame, so by the time `clearForestUnderBullets()` runs, the terrain is already `Grass` and the terrain check alone would miss the bullet. Two-stage fix:
+1. The `tileChanged` handler checks whether the incoming tile *was* `Forest` and, if so, adds `"tileX,tileY"` to `remoteBulletKillZones` (a `Map<string, number>` of tile-key → expiry timestamp, TTL 500 ms).
+2. `clearForestUnderBullets()` kills a remote bullet if the terrain is `Forest` (rare — bullet arrived before `tileChanged`) **or** if the bullet's tile key is in `remoteBulletKillZones` (common — `tileChanged` already cleared the tile). The registry entry is consumed on first hit and pruned on expiry.
 
 **MP hit model:** The shooter detects ghost overlap locally and sends `bulletHit` to server. The server relays to all clients. The victim receives `bulletHit { targetId: myPlayerId }` and applies damage locally — calling `tank.takeDamage()` and `sendPlayerKillSelf(shooterId)` if killed. Remote bullets do NOT collide with the local tank (victim self-reports from the server relay).
 
