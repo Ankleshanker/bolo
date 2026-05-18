@@ -125,7 +125,7 @@ In multiplayer, team-awareness comes from `networkManager.isMyTeam(ownerId)` —
 - `MAX_HEALTH = 4`
 - `takeDamage()` — crack overlay alpha = `(MAX_HEALTH - health) / (MAX_HEALTH - 1)`: 0 at full health, 1 at 1 HP
 - At 0 HP: sprite hidden, body disabled, `alive = false`
-- Destroyed pillbox immediately removes from `PillboxManager.pills`, spawns a `pill_neutral` pickup sprite (scale 0.65, alpha 0.9) at the same position
+- Destroyed pillbox immediately removes from `PillboxManager.pills` and spawns a `pill_neutral` pickup sprite (scale 0.65, alpha 0.9) at the same position in both SP and MP
 
 ### Crack overlay
 
@@ -137,9 +137,21 @@ Immovable circle: radius 12, offset (4, 4). Blocks tank and builder soldier.
 
 ### Capture flow
 
-1. Tank drives over pill pickup → `tank.pillsCarried = 1`, pickup destroyed
+**Single-player:**
+1. Tank drives over pill pickup → `tank.pillsCarried = 1`, pickup sprite destroyed immediately
 2. Select `buildPillbox` action, click target tile (10 trees + 1 pill required)
 3. Builder soldier arrives → `PillboxManager.addPill(tileX, tileY)` creates a new friendly pillbox
+
+**Multiplayer:**
+1. Destroyer's client spawns pickup sprite locally and emits `pillPickupSpawned { id, x, y }` to server
+2. Server stores the pickup in the world snapshot and relays to all other clients, who also spawn the sprite
+3. Any tank that drives over the pickup tile sends `pillPickupCollected { id }` to the server
+4. Server applies a first-come guard: if the pickup still exists, removes it from the snapshot and broadcasts `pillPickupCollected { id, collectorId }` to all clients; if already gone, silently drops
+5. All clients destroy the pickup sprite on receipt; the winner (`collectorId`) sets `tank.pillsCarried = 1`
+6. Late joiners receive active pickups via `WorldSnapshot.pillPickups[]`
+
+`GameScene.pillPickups` is typed `{ sprite: Phaser.GameObjects.Sprite; id: string }[]`. In SP the `id` is `''`.  
+`GameScene.pendingPillCollects: Set<string>` prevents sending duplicate collect events while standing on a tile.
 
 ### Key methods (multiplayer)
 
@@ -148,10 +160,11 @@ Immovable circle: radius 12, offset (4, 4). Blocks tank and builder soldier.
 
 ### Multiplayer sync
 
-- When a pillbox is damaged/destroyed by the local player: `networkManager.sendPillboxUpdate(idx, ownerId, health, alive)`
+- When a pillbox is damaged/destroyed by the local player: `networkManager.sendPillboxUpdate(idx, ownerId, health, alive)` + `networkManager.sendPillPickupSpawned(id, x, y)`
 - When received: `pill.capture(owner)` sets texture + stops shooting; `pill.health = d.health`
 - On `setupMultiplayer()`: the **host** pre-broadcasts all pills as neutral to seed the server snapshot (prevents false domination win)
 - Non-host clients receive `pillboxFire { pillIndex, angleDeg }` and call `pill.setFacing()` + `pill.fireAt()` to replicate the bullet locally
+- Pickup collection is server-authoritative via `pillPickupSpawned` / `pillPickupCollected` events (see Capture flow above)
 
 ---
 

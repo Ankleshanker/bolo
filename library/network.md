@@ -30,15 +30,16 @@ npx wrangler deploy
 ### Server deploy (Lightsail)
 
 ```
-Host: 100.50.52.68
-User: ubuntu
-Key:  C:/Users/BenFeingoldThoryn/OneDrive - Lincoln Institute of Land Policy/Desktop/Claude Cowork/Projects/Personal/Bolo/LightsailDefaultKey-us-east-1.pem
+Host: ubuntu@api.bolo-online.com  (also reachable at 100.50.52.68)
+Key:  C:\Users\BenFeingoldThoryn\AppData\Local\Temp\lightsail.pem
 ```
 
+> **Note:** The key is in `AppData\Local\Temp`, which Windows may clear. Back it up to `~\.ssh\` or the repo root (gitignored).
+
 ```bash
-ssh -i "C:/Users/BenFeingoldThoryn/OneDrive - Lincoln Institute of Land Policy/Desktop/Claude Cowork/Projects/Personal/Bolo/LightsailDefaultKey-us-east-1.pem" \
-  -o StrictHostKeyChecking=no ubuntu@100.50.52.68 \
-  "cd /opt/bolo && git pull && sudo docker compose up -d --build > /tmp/bolo-deploy.log 2>&1 && echo 'Deploy started'"
+ssh -i "C:\Users\BenFeingoldThoryn\AppData\Local\Temp\lightsail.pem" \
+  -o StrictHostKeyChecking=accept-new ubuntu@api.bolo-online.com \
+  "cd /opt/bolo && git pull && docker compose up -d --build"
 ```
 
 Nginx (`matrix-nginx` container on Lightsail) proxies WebSocket connections to the `bolo-server` Docker container on port 3000. TLS certs managed by certbot with Cloudflare DNS-01 challenge.
@@ -103,6 +104,8 @@ sendBoatAdded(tileX, tileY)
 sendSoldierState(x, y, active)               // volatile, 20 Hz — builder position sync
 sendPillboxBulletFired(pillIndex, x, y, ang) // host only — relayed to non-hosts
 sendPillboxFire(pillIndex, angleDeg)         // host only — relayed to non-hosts
+sendPillPickupSpawned(id, x, y)              // destroyer emits; server stores + relays to others
+sendPillPickupCollected(id)                  // collector candidate; server first-come guard, then broadcasts
 sendRequestSnapshot()                        // called once at end of setupMultiplayer()
 ```
 
@@ -164,6 +167,7 @@ States: `LOBBY → PLAYING → ENDED`
 - `baseStates[]` — all known base states (index, ownerId, health, shells, mines)
 - `mines[]` — all active mines; entries removed on `mineDetonated`
 - `boats[]` — all placed boats; entries pruned when their tile is overwritten via `updateTileChanged()` (a tile mutation means the boat is gone)
+- `pillPickups[]` — all uncollected pill pickups `{ id, x, y }`; entries added on `pillPickupSpawned`, removed on `pillPickupCollected`
 - `tankStates[]` — last known tank state per player
 - `timeElapsed` — ms since game start
 
@@ -195,6 +199,8 @@ States: `LOBBY → PLAYING → ENDED`
 | `mineAdded` | `{ tileX, tileY, ownerPlayerId }` | Relayed + stored in snapshot |
 | `mineDetonated` | `{ tileX, tileY }` | Relayed + snapshot mine removed |
 | `boatAdded` | `{ tileX, tileY }` | Relayed + stored in snapshot |
+| `pillPickupSpawned` | `{ id, x, y }` | Destroyer emits; stored in snapshot; relayed to all **others** (destroyer already spawned locally) |
+| `pillPickupCollected` | `{ id }` | Collector candidate; server removes from snapshot if present (first-come), broadcasts `S2C_PillPickupCollected` to room; silently dropped if already gone |
 | `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Host only; server relays to all other clients |
 | `pillboxFire` | `{ pillIndex, angleDeg }` | Host only; server relays to all other clients |
 | `soldierState` | `{ x, y, active }` | Volatile; server relays with `playerId` appended |
@@ -225,6 +231,8 @@ States: `LOBBY → PLAYING → ENDED`
 | `mineAdded` | `{ tileX, tileY, ownerPlayerId }` | |
 | `mineDetonated` | `{ tileX, tileY }` | |
 | `boatAdded` | `{ tileX, tileY }` | |
+| `pillPickupSpawned` | `{ id, x, y }` | Relayed to all clients except the destroyer |
+| `pillPickupCollected` | `{ id, collectorId }` | Broadcast to all clients including collector; collector sets `tank.pillsCarried = 1` |
 | `timeUpdate` | `{ remaining: number }` | ms remaining; drives client timer in MP |
 | `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Relayed from host to all other clients |
 | `pillboxFire` | `{ pillIndex, angleDeg }` | Relayed from host to all other clients |
