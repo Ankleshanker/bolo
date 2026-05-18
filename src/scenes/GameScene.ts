@@ -117,6 +117,7 @@ export class GameScene extends Phaser.Scene {
   private killFeedObjs: Phaser.GameObjects.Text[] = [];
   private chyron!: Chyron;
   private playerNames = new Map<string, string>();
+  private _tankPushCooldowns = new Map<string, number>();
   // Store net handlers as arrow fns so we can remove them on shutdown
   private _netHandlers: Array<{ event: string; fn: (d: unknown) => void }> = [];
 
@@ -496,6 +497,18 @@ export class GameScene extends Phaser.Scene {
     this._addNetHandler('playerKill', (d) => {
       this._showKillFeed(`${d.killerName} ✕ ${d.victimName}`);
       this.chyron.push(`${d.killerName} destroyed ${d.victimName}.`);
+    });
+
+    // Phase 4: receive a push impulse from a faster remote tank
+    this._addNetHandler('tankPush', (d) => {
+      if (this.dead) return;
+      const MAX_PUSH = 240; // px/s clamp — prevents griefing beyond normal max speed
+      this.tank.body.velocity.x = Phaser.Math.Clamp(
+        this.tank.body.velocity.x + d.impulseX, -MAX_PUSH, MAX_PUSH,
+      );
+      this.tank.body.velocity.y = Phaser.Math.Clamp(
+        this.tank.body.velocity.y + d.impulseY, -MAX_PUSH, MAX_PUSH,
+      );
     });
 
     // ── Pillbox bullets (host-authoritative) ──────────────────────────────────
@@ -933,6 +946,57 @@ export class GameScene extends Phaser.Scene {
         if (killed) this.time.delayedCall(0, () => this.onTankKilled());
       },
     );
+
+    // MP-only colliders
+    if (this.multiplayerMode && this.ghostManager) {
+      // Phase 2–3: local tank cannot pass through remote tanks.
+      // Ghosts are immovable (server-authoritative position); all separation
+      // energy is applied to the local tank.  The callback adds an extra impulse
+      // scaled by the ghost's speed so a fast-moving ghost pushes harder, and
+      // sends a network push to the ghost's client when we are the faster tank.
+      const PUSH_SCALE         = 0.35;
+      const TANK_PUSH_COOLDOWN = 100; // ms between network push events per ghost
+
+      this.physics.add.collider(
+        this.tank.sprite,
+        this.ghostManager.group,
+        (_tankSprite, ghostSprite) => {
+          if (this.dead) return;
+          const ghost = ghostSprite as Phaser.Physics.Arcade.Sprite;
+          const targetId = this.ghostManager!.getPlayerIdBySprite(ghost);
+          if (!targetId) return;
+
+          const ghostVel   = this.ghostManager!.getGhostVelocity(ghost);
+          const ghostSpeed = Math.hypot(ghostVel.vx, ghostVel.vy);
+          const tankSpeed  = Math.hypot(this.tank.body.velocity.x, this.tank.body.velocity.y);
+
+          // Collision normal: direction from ghost toward local tank
+          const nx   = this.tank.x - ghost.x;
+          const ny   = this.tank.y - ghost.y;
+          const nlen = Math.hypot(nx, ny) || 1;
+          const nnx  = nx / nlen;
+          const nny  = ny / nlen;
+
+          // If the ghost is moving, apply an extra push to the local tank
+          if (ghostSpeed > 10) {
+            const boost = ghostSpeed * PUSH_SCALE;
+            this.tank.body.velocity.x += nnx * boost;
+            this.tank.body.velocity.y += nny * boost;
+          }
+
+          // If the local tank is faster, push the ghost's client over the network
+          const now      = Date.now();
+          const lastPush = this._tankPushCooldowns.get(targetId) ?? 0;
+          if (tankSpeed > ghostSpeed + 20 && now - lastPush > TANK_PUSH_COOLDOWN) {
+            const excess   = tankSpeed - ghostSpeed;
+            // Push direction for the ghost: away from the local tank (opposite of nnx)
+            networkManager.sendTankPush(targetId, -nnx * excess * PUSH_SCALE, -nny * excess * PUSH_SCALE);
+            this._tankPushCooldowns.set(targetId, now);
+          }
+
+        },
+      );
+    }
 
     // MP-only: my bullets hit remote players
     if (this.multiplayerMode && this.ghostManager) {

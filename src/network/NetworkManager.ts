@@ -29,6 +29,7 @@ import type {
   S2C_PillboxBulletFired,
   S2C_SoldierState,
   S2C_PillboxFire,
+  S2C_TankPush,
 } from './types.ts';
 
 // ---------------------------------------------------------------------------
@@ -61,6 +62,7 @@ export type NetEvents = {
   pillboxBulletFired:   S2C_PillboxBulletFired;
   soldierState:         S2C_SoldierState;
   pillboxFire:          S2C_PillboxFire;
+  tankPush:             S2C_TankPush;
   kicked:               void;
   error:                { message: string };
 };
@@ -100,6 +102,7 @@ function makeListenerMap(): ListenerMap {
     pillboxBulletFired:  new Set(),
     soldierState:        new Set(),
     pillboxFire:         new Set(),
+    tankPush:            new Set(),
     kicked:              new Set(),
     error:               new Set(),
   };
@@ -115,7 +118,7 @@ const SERVER_EVENTS: (keyof NetEvents)[] = [
   'gameStart', 'stateSnapshot', 'tankState', 'bulletFired', 'bulletHit',
   'tileChanged', 'pillboxUpdate', 'baseUpdate', 'mineAdded', 'mineDetonated',
   'boatAdded', 'timeUpdate', 'playerKill', 'gameOver', 'pillboxBulletFired',
-  'soldierState', 'pillboxFire',
+  'soldierState', 'pillboxFire', 'tankPush',
   'kicked', 'error',
 ];
 
@@ -286,6 +289,10 @@ export class NetworkManager {
 
   sendPillboxFire(pillIndex: number, angleDeg: number): void {
     this.socket?.emit('pillboxFire', { pillIndex, angleDeg });
+  }
+
+  sendTankPush(targetId: string, impulseX: number, impulseY: number): void {
+    this.socket?.volatile.emit('tankPush', { targetId, impulseX, impulseY });
   }
 
   returnToLobby(): void {

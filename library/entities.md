@@ -28,7 +28,7 @@ Five entity types drive gameplay: Tank (local player), GhostTank (remote players
 - Down arrow: strong friction (`FRICTION_BRAKE = 0.78`)
 - `facing` snaps to nearest 22.5° step (`DIR_SNAP = 360/16`) before applying velocity
 - `MAX_SPEED_GRASS = 160 px/s` — multiplied by `TERRAIN_SPEED[tileUnderTank]`
-- Physics body: 22×22 circle, `allowGravity = false`, `setCollideWorldBounds(false)`
+- Physics body: 22×22 rectangle, `allowGravity = false`, `setCollideWorldBounds(false)`
 
 ### Firing
 

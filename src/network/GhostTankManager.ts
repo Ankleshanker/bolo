@@ -106,6 +106,12 @@ export class GhostTankManager {
     sprite.setVisible(false);  // hidden until first snapshot arrives
     this.group.add(sprite);
 
+    // Phase 1: configure physics body to match the local tank
+    const body = sprite.body as Phaser.Physics.Arcade.Body;
+    body.setSize(22, 22);
+    body.immovable = true;   // ghost position is server-authoritative; never let physics displace it
+    body.enable    = false;  // disabled until we have a live position
+
     const nameLabel = this.scene.add.text(0, NAME_LABEL_OFFSET_Y, name, {
       fontSize: '10px',
       color: '#ffffff',
@@ -203,6 +209,7 @@ export class GhostTankManager {
 
       if (!alive) {
         ghost.sprite.setVisible(false);
+        (ghost.sprite.body as Phaser.Physics.Arcade.Body).enable = false;
         ghost.nameLabel.setVisible(false);
         ghost.healthBar.setVisible(false);
         ghost.healthBarBg.setVisible(false);
@@ -261,6 +268,7 @@ export class GhostTankManager {
       const hiddenFromMe = inForest && !networkManager.isMyTeam(ghost.playerId);
       if (hiddenFromMe) {
         ghost.sprite.setVisible(false);
+        (ghost.sprite.body as Phaser.Physics.Arcade.Body).enable = false;
         ghost.nameLabel.setVisible(false);
         ghost.healthBar.setVisible(false);
         ghost.healthBarBg.setVisible(false);
@@ -268,6 +276,7 @@ export class GhostTankManager {
       }
 
       ghost.sprite.setVisible(true);
+      (ghost.sprite.body as Phaser.Physics.Arcade.Body).enable = true;
 
       if (ghost.ghosted) {
         ghost.sprite.setAlpha(0.35);
@@ -378,5 +387,24 @@ export class GhostTankManager {
       ghost.soldierSprite?.destroy();
     }
     this.ghosts.clear();
+  }
+
+  /**
+   * Returns the approximate velocity (px/s) of a ghost derived from its two
+   * most-recent snapshots.  Returns {vx:0, vy:0} when fewer than two snapshots
+   * are available or the ghost is unknown.
+   */
+  getGhostVelocity(sprite: Phaser.Physics.Arcade.Sprite): { vx: number; vy: number } {
+    for (const ghost of this.ghosts.values()) {
+      if (ghost.sprite !== sprite) continue;
+      const snaps = ghost.snapshots;
+      if (snaps.length < 2) return { vx: 0, vy: 0 };
+      const a  = snaps[snaps.length - 2];
+      const b  = snaps[snaps.length - 1];
+      const dt = (b.timestamp - a.timestamp) / 1000;
+      if (dt <= 0) return { vx: 0, vy: 0 };
+      return { vx: (b.x - a.x) / dt, vy: (b.y - a.y) / dt };
+    }
+    return { vx: 0, vy: 0 };
   }
 }
