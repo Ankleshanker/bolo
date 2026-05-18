@@ -365,6 +365,23 @@ export class GameScene extends Phaser.Scene {
   private setupMultiplayer(): void {
     const net = networkManager;
 
+    // ── Room code label (above settings gear, uiCam only) ───────────────────
+    const cx = PANEL_WIDTH / 2;
+    const codeGearY = () => this.scale.height - 60;
+    const codeBg = this.add.rectangle(cx, codeGearY(), 84, 34, 0x0d1f33)
+      .setStrokeStyle(1, 0x2244aa).setDepth(21).setScrollFactor(0);
+    const codeLabel = this.add.text(cx, codeGearY() - 8, 'ROOM CODE', {
+      fontSize: '8px', color: '#445566', letterSpacing: 1,
+    }).setDepth(22).setScrollFactor(0).setOrigin(0.5, 0.5);
+    const codeValue = this.add.text(cx, codeGearY() + 7, net.roomCode, {
+      fontSize: '12px', color: '#88bbff', fontStyle: 'bold', letterSpacing: 2,
+    }).setDepth(22).setScrollFactor(0).setOrigin(0.5, 0.5);
+    this.cameras.main.ignore([codeBg, codeLabel, codeValue]);
+    this.scale.on('resize', () => {
+      const y = this.scale.height - 60;
+      codeBg.setY(y); codeLabel.setY(y - 8); codeValue.setY(y + 7);
+    });
+
     // ── Apply initial players as ghosts ─────────────────────────────────────
     for (const [id, p] of net.players) {
       this.playerNames.set(id, p.name);
