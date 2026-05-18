@@ -1256,6 +1256,19 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
+    if (this.remoteBullets) {
+      for (const obj of this.remoteBullets.group.getChildren()) {
+        const b = obj as Phaser.Physics.Arcade.Sprite;
+        if (!b.active) continue;
+        const tx = Math.floor(b.x / TILE_SIZE);
+        const ty = Math.floor(b.y / TILE_SIZE);
+        if (this.mapData.terrain[ty]?.[tx] === DisplayTile.Forest) {
+          this.setTile(tx, ty, DisplayTile.Grass, false);
+          this.soundManager.playHitTree(this.soundDist(b.x, b.y));
+          this.remoteBullets.kill(b);
+        }
+      }
+    }
   }
 
   private ensureBoatAtTile(tileX: number, tileY: number) {
