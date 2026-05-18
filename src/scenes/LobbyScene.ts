@@ -15,10 +15,22 @@ const TEAM_MODE_LABELS: Record<string, string> = {
   '4team': '4 Teams',
 };
 
+const TEAM_MODE_SHORT: Record<string, string> = {
+  ffa:    'FFA',
+  '2team': '2v2',
+  '4team': '4-way',
+};
+
 const WIN_COND_LABELS: Record<string, string> = {
   timer:      'Timer + Objectives',
   domination: 'Domination',
   deathmatch: 'Deathmatch',
+};
+
+const WIN_COND_SHORT: Record<string, string> = {
+  timer:      'Timer',
+  domination: 'Dom.',
+  deathmatch: 'DM',
 };
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
@@ -512,10 +524,10 @@ export class LobbyScene extends Phaser.Scene {
     );
     this._push(this.add.text(cx, createY, '＋  CREATE ROOM', { fontSize: '18px', color: C.text, fontStyle: 'bold' }).setOrigin(0.5));
 
-    // ── Public rooms ──────────────────────────────────────────────────────
+    // ── Active Games ──────────────────────────────────────────────────────
     const pubY = createY + 52;
 
-    this._push(this.add.text(cx, pubY, 'PUBLIC ROOMS', { fontSize: '13px', color: C.textDim, letterSpacing: 3 }).setOrigin(0.5));
+    this._push(this.add.text(cx, pubY, 'ACTIVE GAMES', { fontSize: '13px', color: C.textDim, letterSpacing: 3 }).setOrigin(0.5));
 
     const refreshBtn = this._push(this.add.rectangle(W - 80, pubY, 100, 22, 0x0d2a4a)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
@@ -528,23 +540,58 @@ export class LobbyScene extends Phaser.Scene {
     const listTop = pubY + 16;
     const listH   = Math.max(60, H - listTop - 16);
     const listW   = W - 80;
+    const listLeft = 40;
+
+    // Column x positions (proportional to listW so they scale on resize)
+    const colName    = listLeft + 8;
+    const colPlayers = listLeft + listW * 0.42;
+    const colTeams   = listLeft + listW * 0.54;
+    const colMode    = listLeft + listW * 0.66;
+    const colLock    = listLeft + listW * 0.80;
+    const colTime    = listLeft + listW - 8;
+
     this._push(this.add.rectangle(cx, listTop + listH / 2, listW, listH, 0x08121e).setStrokeStyle(1, 0x1a3355));
 
+    // Header row
+    const hdrY = listTop + 11;
+    const hdrStyle = { fontSize: '11px', color: '#334455' };
+    this._push(this.add.text(colName,    hdrY, 'ROOM',    hdrStyle).setOrigin(0, 0.5));
+    this._push(this.add.text(colPlayers, hdrY, 'PLAYERS', hdrStyle).setOrigin(0.5, 0.5));
+    this._push(this.add.text(colTeams,   hdrY, 'TEAMS',   hdrStyle).setOrigin(0.5, 0.5));
+    this._push(this.add.text(colMode,    hdrY, 'MODE',    hdrStyle).setOrigin(0.5, 0.5));
+    this._push(this.add.text(colLock,    hdrY, 'ACCESS',  hdrStyle).setOrigin(0.5, 0.5));
+    this._push(this.add.text(colTime,    hdrY, 'TIME',    hdrStyle).setOrigin(1, 0.5));
+
+    // Divider below header
+    const divG = this.add.graphics();
+    divG.lineStyle(1, 0x1a3355, 1);
+    divG.lineBetween(listLeft + 8, listTop + 20, listLeft + listW - 8, listTop + 20);
+    this._push(divG);
+
     if (this.roomList.length === 0) {
-      this._push(this.add.text(cx, listTop + listH / 2, 'No public rooms — create one!', { fontSize: '14px', color: '#334455' }).setOrigin(0.5));
+      this._push(this.add.text(cx, listTop + listH / 2, 'No active games — create one!', { fontSize: '14px', color: '#334455' }).setOrigin(0.5));
     } else {
-      let ry = listTop + 8;
+      let ry = listTop + 26;
       for (const room of this.roomList.slice(0, 5)) {
-        const rowBg = this._push(this.add.rectangle(cx, ry + 14, listW - 16, 30, 0x0d1f33)
+        const rowH  = 28;
+        const rowBg = this._push(this.add.rectangle(cx, ry + rowH / 2, listW - 16, rowH, 0x0d1f33)
           .setStrokeStyle(1, 0x1a3355).setInteractive({ useHandCursor: true })
           .on('pointerover', () => (rowBg as Phaser.GameObjects.Rectangle).setFillStyle(C.panelHi))
           .on('pointerout',  () => (rowBg as Phaser.GameObjects.Rectangle).setFillStyle(0x0d1f33))
           .on('pointerdown', () => this._joinRoom(room.code))
         );
-        this._push(this.add.text(40, ry + 14, room.name, { fontSize: '14px', color: C.text }).setOrigin(0, 0.5));
-        this._push(this.add.text(cx, ry + 14, `${TEAM_MODE_LABELS[room.settings.teamMode] ?? room.settings.teamMode}  ·  ${WIN_COND_LABELS[room.settings.winCondition] ?? room.settings.winCondition}`, { fontSize: '13px', color: C.textDim }).setOrigin(0.5, 0.5));
-        this._push(this.add.text(W - 40, ry + 14, `${room.playerCount}/${room.maxPlayers}`, { fontSize: '13px', color: '#aaffaa' }).setOrigin(1, 0.5));
-        ry += 34;
+
+        const rowMid = ry + rowH / 2;
+        const playing = room.state === 'PLAYING';
+
+        this._push(this.add.text(colName,    rowMid, room.name,                                                  { fontSize: '13px', color: C.text    }).setOrigin(0,   0.5));
+        this._push(this.add.text(colPlayers, rowMid, `${room.playerCount}/${room.maxPlayers}`,                   { fontSize: '13px', color: '#aaffaa' }).setOrigin(0.5, 0.5));
+        this._push(this.add.text(colTeams,   rowMid, TEAM_MODE_SHORT[room.settings.teamMode]   ?? room.settings.teamMode,   { fontSize: '13px', color: C.textGrey }).setOrigin(0.5, 0.5));
+        this._push(this.add.text(colMode,    rowMid, WIN_COND_SHORT[room.settings.winCondition] ?? room.settings.winCondition, { fontSize: '13px', color: C.textGrey }).setOrigin(0.5, 0.5));
+        this._push(this.add.text(colLock,    rowMid, room.settings.isPublic ? '🔓' : '🔒',                       { fontSize: '13px', color: C.textGrey }).setOrigin(0.5, 0.5));
+        this._push(this.add.text(colTime,    rowMid, playing ? this._formatTime(room.timeRemainingMs) : 'Lobby', { fontSize: '13px', color: playing ? '#ffdd88' : C.textDim }).setOrigin(1, 0.5));
+
+        ry += rowH + 2;
       }
     }
 
@@ -838,6 +885,13 @@ export class LobbyScene extends Phaser.Scene {
 
   private _truncate(s: string, n: number): string {
     return s.length > n ? s.slice(0, n) + '…' : s;
+  }
+
+  private _formatTime(ms: number): string {
+    const totalSec = Math.ceil(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
   }
 
   private _cleanupListeners() {
