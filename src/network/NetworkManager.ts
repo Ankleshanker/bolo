@@ -272,6 +272,10 @@ export class NetworkManager {
     this.socket?.emit('boatAdded', { tileX, tileY });
   }
 
+  sendRequestSnapshot(): void {
+    this.socket?.emit('requestSnapshot');
+  }
+
   sendPillboxBulletFired(pillIndex: number, x: number, y: number, angleDeg: number): void {
     this.socket?.emit('pillboxBulletFired', { pillIndex, x, y, angleDeg });
   }

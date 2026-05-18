@@ -298,6 +298,12 @@ export class GameRoom {
     const i = this.snapshot.terrainDiffs.findIndex(d => d.tileX === diff.tileX && d.tileY === diff.tileY);
     if (i >= 0) this.snapshot.terrainDiffs[i] = diff;
     else         this.snapshot.terrainDiffs.push(diff);
+    // A tile change means a boat at this position (if any) is gone.
+    this.removeBoatAt(diff.tileX, diff.tileY);
+  }
+
+  removeBoatAt(tileX: number, tileY: number): void {
+    this.snapshot.boats = this.snapshot.boats.filter(b => !(b.tileX === tileX && b.tileY === tileY));
   }
 
   updatePillbox(state: PillboxState): void {

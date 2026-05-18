@@ -512,6 +512,12 @@ export class GameScene extends Phaser.Scene {
       this.soundManager.playPillboxFire(this.soundDist(pill.x, pill.y));
     });
 
+    // Pull a fresh snapshot now that all handlers are registered.
+    // The server sends stateSnapshot immediately after gameStart/roomJoined,
+    // which arrives before this scene's create() runs and is dropped.
+    // Requesting it here guarantees late joiners receive current world state.
+    networkManager.sendRequestSnapshot();
+
     // ── Spectator keys ─────────────────────────────────────────────────────────
     this.input.keyboard!.on('keydown-Q', () => {
       if (this.spectatorMode) {
