@@ -259,8 +259,8 @@ export class NetworkManager {
     this.socket?.emit('pillboxUpdate', { index, ownerId, health, alive });
   }
 
-  sendBaseUpdate(index: number, ownerId: string | null): void {
-    this.socket?.emit('baseUpdate', { index, ownerId });
+  sendBaseUpdate(index: number, ownerId: string | null, health: number, shells: number, mines: number): void {
+    this.socket?.emit('baseUpdate', { index, ownerId, health, shells, mines });
   }
 
   sendMineAdded(tileX: number, tileY: number): void {

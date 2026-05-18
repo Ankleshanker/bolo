@@ -61,6 +61,9 @@ export interface PillboxState {
 export interface BaseState {
   index:   number;
   ownerId: string | null;        // null = neutral
+  health:  number;               // 0 = neutral/destroyed, BASE_MAX_HEALTH when owned
+  shells:  number;               // 0–90 current ammo supply
+  mines:   number;               // 0–20 current mine supply
 }
 
 export interface MineState {
@@ -141,10 +144,7 @@ export interface C2S_PillboxUpdate {
   alive:   boolean;
 }
 
-export interface C2S_BaseUpdate {
-  index:   number;
-  ownerId: string | null;
-}
+export interface C2S_BaseUpdate extends BaseState {}
 
 export interface C2S_MineAdded {
   tileX: number;
