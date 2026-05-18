@@ -187,18 +187,19 @@ interface GameSceneInitData {
 1. If `gameOver`: return immediately
 2. SP timer decrement (MP timer driven by `timeUpdate` events from server)
 3. Spectator camera update (MP, dead)
-4. If `dead`: `handleRespawn(delta)`, `updateMinimap()`, `updateHUD()`, return early
-5. `getTileUnderTank()` → `tileVal`
-6. Sea sink check
-7. Movement + fire via `Tank.updateTank()` / `Tank.tryFire()`
-8. `tank.sprite.setAlpha(inForest ? 0.65 : 1)` — unconditional, every frame
-9. `playerBullets.update()`, `pillboxBullets.update()`, `remoteBullets?.update()`
-10. `clearForestUnderBullets()`
-11. `pillboxes.update()`, `builder.update()`, `ghostManager?.update()`
-12. `checkPillPickup()`, `checkMines()`, `checkBaseInteraction()`
-13. `settingsPanel.update(delta)`
-14. `updateMinimap()`, `updateHUD()`
-15. 20 Hz tank state send (MP only): accumulator-gated, emits `sendTankState()`
+4. `chyron.update(delta)` — runs unconditionally so ticker keeps scrolling during spectator/dead
+5. If `dead`: `handleRespawn(delta)`, `updateMinimap()`, `updateHUD()`, return early
+6. `getTileUnderTank()` → `tileVal`
+7. Sea sink check
+8. Movement + fire via `Tank.updateTank()` / `Tank.tryFire()`
+9. `tank.sprite.setAlpha(inForest ? 0.65 : 1)` — unconditional, every frame
+10. `playerBullets.update()`, `pillboxBullets.update()`, `remoteBullets?.update()`
+11. `clearForestUnderBullets()`
+12. `pillboxes.update()`, `builder.update()`, `ghostManager?.update()`
+13. `checkPillPickup()`, `checkMines()`, `checkBaseInteraction()`
+14. `settingsPanel.update(delta)`
+15. `updateMinimap()`, `updateHUD()`
+16. 20 Hz tank state send (MP only): accumulator-gated, emits `sendTankState()`
 
 ### `shutdown()`
 
@@ -208,10 +209,10 @@ Iterates `_netHandlers[]` and calls `networkManager.off()` for each registered c
 
 | Camera | Viewport | Renders |
 |---|---|---|
-| `cameras.main` | `(PANEL_WIDTH, 0, W-PANEL_WIDTH, H)` | Game world + HUD text + minimap + settings overlay |
+| `cameras.main` | `(PANEL_WIDTH, 0, W-PANEL_WIDTH, H)` | Game world + HUD text + kill feed + chyron + minimap + settings overlay |
 | `uiCam` | `(0, 0, PANEL_WIDTH, H)` | ActionPanel buttons + stat bars + gear icon |
 
-`cameras.main` ignores all ActionPanel/SettingsPanel gear/stat bar objects. `uiCam` ignores HUD text and minimap. `scrollFactor(0)` positioning: `canvas_x = camera.viewport.x + object.x`. HUD text sits at `object.x = 6` so it renders at `canvas_x = PANEL_WIDTH + 6 = 106`.
+`cameras.main` ignores ActionPanel/SettingsPanel gear/stat bar objects. `uiCam` ignores HUD text, minimap, and all chyron objects. `scrollFactor(0)` positioning: `canvas_x = camera.viewport.x + object.x`. HUD text at `object.x = 6` renders at `canvas_x = PANEL_WIDTH + 6 = 106`.
 
 No `setBounds` on either camera. A 16-tile sea border ensures map tiles always fill the viewport even at the playable edge.
 
@@ -234,7 +235,7 @@ When the local tank dies in MP, `spectatorMode = true`. Q/E keys cycle `spectato
 - **Kill feed** — bottom-right toast notifications (depth 31), timed removal
 - **Timer** — top-center of game viewport
 - **Minimap** — bottom-right, 128×128, depth 90–91
-- **Chyron** — full-viewport-width scrolling ticker anchored to screen bottom (depth 33–34). Created in `buildHUD()`; ignored by `uiCam`. Events: player joined/left, tank destroyed, pillbox destroyed, base claimed, drowned, mine hit.
+- **Chyron** — game-viewport-width scrolling ticker anchored to the bottom of the game area (depth 33–35). Starts at the right edge of the panel (canvas x = PANEL_WIDTH), does not extend into the left panel. Created in `buildHUD()`; all three objects (bg, accent line, label) ignored by `uiCam`. Events pushed: player joined/left, tank destroyed, pillbox destroyed, base claimed, drowned, mine hit.
 
 ### Depth layer assignments
 
@@ -252,10 +253,10 @@ When the local tank dies in MP, `spectatorMode = true`. Q/E keys cycle `spectato
 | 21–22 | Settings gear button (uiCam) |
 | 22–23 | Stat bars (uiCam) |
 | 30 | HUD text (cameras.main) |
-| 31 | Kill feed (cameras.main) |
-| 33 | Chyron background strip (both cameras — full-screen coverage) |
-| 34 | Chyron top-border accent line (both cameras) |
-| 35 | Chyron scrolling text (cameras.main only) |
+| 32 | Kill feed (cameras.main) |
+| 33 | Chyron background strip (cameras.main, game viewport only) |
+| 34 | Chyron top-border accent line (cameras.main, game viewport only) |
+| 35 | Chyron scrolling text (cameras.main, game viewport only) |
 | 50–53 | Settings modal overlay (cameras.main) |
 | 90–91 | Minimap terrain + blip (cameras.main) |
 
