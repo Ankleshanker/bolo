@@ -365,21 +365,37 @@ export class GameScene extends Phaser.Scene {
   private setupMultiplayer(): void {
     const net = networkManager;
 
-    // ── Room code label (above settings gear, uiCam only) ───────────────────
-    const cx = PANEL_WIDTH / 2;
-    const codeGearY = () => this.scale.height - 60;
-    const codeBg = this.add.rectangle(cx, codeGearY(), 84, 34, 0x0d1f33)
+    // ── Room code label + copy button (above settings gear, uiCam only) ──────
+    const cx        = PANEL_WIDTH / 2;
+    // Gear center = H-24, gear top = H-44; place box 4px above that
+    const boxCY     = () => this.scale.height - 73; // box center y
+    const codeBg    = this.add.rectangle(cx, boxCY(), 90, 50, 0x0d1f33)
       .setStrokeStyle(1, 0x2244aa).setDepth(21).setScrollFactor(0);
-    const codeLabel = this.add.text(cx, codeGearY() - 8, 'ROOM CODE', {
-      fontSize: '8px', color: '#445566', letterSpacing: 1,
+    const codeLabel = this.add.text(cx, boxCY() - 14, 'ROOM CODE', {
+      fontSize: '10px', color: '#8899aa', letterSpacing: 1,
     }).setDepth(22).setScrollFactor(0).setOrigin(0.5, 0.5);
-    const codeValue = this.add.text(cx, codeGearY() + 7, net.roomCode, {
-      fontSize: '12px', color: '#88bbff', fontStyle: 'bold', letterSpacing: 2,
+    const codeValue = this.add.text(cx, boxCY(), net.roomCode, {
+      fontSize: '13px', color: '#aaddff', fontStyle: 'bold', letterSpacing: 3,
     }).setDepth(22).setScrollFactor(0).setOrigin(0.5, 0.5);
-    this.cameras.main.ignore([codeBg, codeLabel, codeValue]);
+    const copyBtn   = this.add.text(cx, boxCY() + 14, '📋 Copy', {
+      fontSize: '10px', color: '#667788',
+    }).setDepth(22).setScrollFactor(0).setOrigin(0.5, 0.5)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerover', () => copyBtn.setStyle({ color: '#aaddff' }))
+      .on('pointerout',  () => copyBtn.setStyle({ color: '#667788' }))
+      .on('pointerdown', () => {
+        navigator.clipboard.writeText(
+          `Join my Bolo Online game using the following room code: ${net.roomCode}\nhttps://bolo.alisted.app?room=${net.roomCode}`,
+        );
+        copyBtn.setText('✓ Copied!').setStyle({ color: '#88ff88' });
+        this.time.delayedCall(1500, () => {
+          copyBtn.setText('📋 Copy').setStyle({ color: '#667788' });
+        });
+      });
+    this.cameras.main.ignore([codeBg, codeLabel, codeValue, copyBtn]);
     this.scale.on('resize', () => {
-      const y = this.scale.height - 60;
-      codeBg.setY(y); codeLabel.setY(y - 8); codeValue.setY(y + 7);
+      const y = boxCY();
+      codeBg.setY(y); codeLabel.setY(y - 14); codeValue.setY(y); copyBtn.setY(y + 14);
     });
 
     // ── Apply initial players as ghosts ─────────────────────────────────────
