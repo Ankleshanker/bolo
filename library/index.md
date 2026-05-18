@@ -25,6 +25,7 @@
 | Doc | What It Covers |
 |---|---|
 | [`decisions.md`](decisions.md) | Architectural and design decisions with rationale — includes deployment decisions (Cloudflare Workers, wrangler.jsonc, Lightsail nginx) |
+| [`deployment.md`](deployment.md) | Step-by-step deploy commands for client (wrangler) and server (SSH + Docker); SSH key location and health check |
 
 ---
 
