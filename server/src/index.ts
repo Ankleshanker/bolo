@@ -11,6 +11,7 @@ import type {
   C2S_BulletFired, C2S_BulletHit, C2S_PlayerKill,
   C2S_PillboxBulletFired,
   C2S_SoldierState,
+  C2S_TankPush,
   TankState,
   S2C_RoomJoined, S2C_PlayerJoined, S2C_PlayerGhosted,
   S2C_PlayerReconnected, S2C_PlayerRemoved, S2C_HostChanged,
@@ -398,6 +399,20 @@ io.on('connection', (socket) => {
       room.endGame(io, room.roomId, over);
       console.log(`[room] "${room.roomName}" game over — reason: ${over.reason}`);
     }
+  });
+
+  // ─── Tank push relay ─────────────────────────────────────────────────────
+
+  socket.on('tankPush', (data: C2S_TankPush) => {
+    const room = lobbyManager.getRoomBySocketId(socket.id);
+    if (!room || room.state !== 'PLAYING') return;
+    const targetSocketId = room.playerToSocket.get(data.targetId);
+    if (!targetSocketId) return;
+    // Cap impulse server-side to prevent spoofed grief pushes
+    const MAX_IMPULSE = 400;
+    const ix = Math.max(-MAX_IMPULSE, Math.min(MAX_IMPULSE, data.impulseX));
+    const iy = Math.max(-MAX_IMPULSE, Math.min(MAX_IMPULSE, data.impulseY));
+    io.to(targetSocketId).emit('tankPush', { impulseX: ix, impulseY: iy });
   });
 
   // ─── Disconnect ────────────────────────────────────────────────────────────

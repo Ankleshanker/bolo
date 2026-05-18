@@ -46,3 +46,5 @@ export interface S2C_PillboxBulletFired { pillIndex: number; x: number; y: numbe
 export interface C2S_SoldierState { x: number; y: number; active: boolean; }
 export interface S2C_SoldierState { playerId: string; x: number; y: number; active: boolean; }
 export interface S2C_PillboxFire { pillIndex: number; angleDeg: number; }
+export interface C2S_TankPush { targetId: string; impulseX: number; impulseY: number; }
+export interface S2C_TankPush { impulseX: number; impulseY: number; }
