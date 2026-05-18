@@ -61,7 +61,14 @@ Manages up to 15 remote player sprites in multiplayer. Each ghost has a sprite, 
 
 ### Physics group
 
-`readonly group: Phaser.Physics.Arcade.Group` — all ghost sprites are added to this group. Used by `setupCollision()` in GameScene to register a single overlap against `playerBullets.group`. This means new ghosts added dynamically are automatically covered without re-registering overlaps.
+`readonly group: Phaser.Physics.Arcade.Group` — all ghost sprites are added to this group. Used by `setupCollision()` in GameScene to register colliders and overlaps against the group. New ghosts added dynamically are automatically covered without re-registering.
+
+### Ghost physics body
+
+Each ghost body is configured in `addGhost()`:
+- `setSize(22, 22)` — matches the local tank body exactly
+- `immovable = true` — ghost position is server-authoritative; physics must never displace it
+- `enable = false` — disabled on creation; toggled to `true`/`false` alongside `setVisible` in `update()` so dead and forest-hidden ghosts don't participate in collision
 
 ### Snapshot interpolation
 
@@ -77,14 +84,15 @@ Each ghost keeps a circular buffer of up to 3 `TankState` snapshots. The render 
 ### Key methods
 
 ```typescript
-addGhost(playerId, name, color, teamIndex)         // create sprite + label + health bar
-removeGhost(playerId)                              // destroy all objects
-updateSnapshot(state: TankState)                  // push new interpolation frame
-setGhosted(playerId, disconnected: boolean)       // toggle DC visual
-getSpriteByPlayerId(playerId): Sprite | undefined  // for spectator camera follow
-getPlayerIdBySprite(sprite): string | undefined   // for bullet hit attribution
-getAlivePlayerIds(): string[]                     // for spectator cycling
-getAlivePillTargets(): {x,y,hidden}[]             // for host pillbox AI target list
+addGhost(playerId, name, color, teamIndex)                    // create sprite + label + health bar
+removeGhost(playerId)                                         // destroy all objects
+updateSnapshot(state: TankState)                             // push new interpolation frame
+setGhosted(playerId, disconnected: boolean)                  // toggle DC visual
+getSpriteByPlayerId(playerId): Sprite | undefined             // for spectator camera follow
+getPlayerIdBySprite(sprite): string | undefined              // for bullet hit / tank push attribution
+getAlivePlayerIds(): string[]                                // for spectator cycling
+getAlivePillTargets(): {x,y,hidden}[]                        // for host pillbox AI target list
+getGhostVelocity(sprite): { vx: number; vy: number }         // approximate velocity from last 2 snapshots
 ```
 
 ---
@@ -160,7 +168,9 @@ Object pool of `Phaser.Physics.Arcade.Sprite` (`'bullet'`). Instances in GameSce
 | `playerBullets` | `ghostManager.group` (MP) | Kill bullet; `sendBulletHit(targetId, 1)`; play hit sound |
 | `pillboxBullets` | `groundLayer` | Kill bullet (no terrain damage) |
 | `pillboxBullets` | `tank.sprite` | Damage tank; kill bullet |
+| `pillboxBullets` | `ghostManager.group` (MP) | Kill bullet visually (damage self-reported on ghost's client) |
 | `remoteBullets` | `groundLayer` | Kill bullet (no terrain damage); no tile effect |
+| `tank.sprite` | `ghostManager.group` (MP) | Arcade separation (ghost immovable); velocity-weighted impulse added to local tank; `sendTankPush` sent to ghost client when local tank is faster |
 | Any active bullet | Forest tile (frame check) | Forest → Grass; kill bullet |
 
 Forest tiles are not in `COLLISION_TILES`, so they're checked programmatically each frame in `clearForestUnderBullets()`.
