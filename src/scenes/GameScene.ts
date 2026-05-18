@@ -996,10 +996,8 @@ export class GameScene extends Phaser.Scene {
 
         },
       );
-    }
 
-    // MP-only: my bullets hit remote players
-    if (this.multiplayerMode && this.ghostManager) {
+      // My bullets hit remote players
       this.physics.add.overlap(
         this.playerBullets.group,
         this.ghostManager.group,

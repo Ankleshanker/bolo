@@ -130,6 +130,15 @@
 
 ---
 
+## Tank-vs-tank collision: immovable ghost + shooter-sends-push — 2026-05-18
+
+**Decision:** Ghost physics bodies are marked `immovable = true`. A Phaser arcade collider between `tank.sprite` and `ghostManager.group` gives the local tank solid collision against all remote players. When the local tank is faster, it sends a `tankPush` impulse over the network (rate-limited to 100 ms per pair); the server relays it only to the target socket, which applies it to that client's local tank. Ghost bodies are disabled (`body.enable = false`) whenever the ghost sprite is hidden (dead, enemy-in-forest) to prevent invisible blocking.
+**Why:** Ghost positions are overwritten every frame by snapshot interpolation — Phaser physics can never displace them without causing jitter. Making ghosts immovable means all separation energy goes into the local tank, which is the one entity whose position we fully control. The network push follows the same shooter-authoritative model as bullet hits: the client with the most accurate local information (the tank doing the ramming) sends the event; the server caps the magnitude to prevent griefing.
+**Alternatives rejected:** Mutable ghost physics — interpolation would snap the ghost back every frame, fighting the physics and causing visible jitter. Server-side collision simulation — would require the server to run a full physics step for every player pair, prohibitive at 16 players. Overlap instead of collider — overlap doesn't generate automatic separation, so the tank would still pass through; manual separation in the callback is more complex and less accurate.
+**Applies to:** `src/network/GhostTankManager.ts` (`addGhost`, `update`, `getGhostVelocity`), `src/scenes/GameScene.ts` (`setupCollision`, `setupMultiplayer`), `src/network/NetworkManager.ts` (`sendTankPush`), `server/src/index.ts` (`tankPush` handler), `src/network/types.ts`, `server/src/types.ts`.
+
+---
+
 ## Cloudflare Workers Assets for client hosting — 2026-05-17
 
 **Decision:** The client SPA is deployed as Cloudflare Workers Assets (via `npx wrangler deploy`) with a `wrangler.jsonc` config file. Not GitHub Pages; not Cloudflare Pages static hosting.
