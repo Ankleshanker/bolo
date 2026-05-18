@@ -109,6 +109,7 @@ export class GameScene extends Phaser.Scene {
   private multiplayerMode = false;
   private ghostManager: GhostTankManager | null = null;
   private remoteBullets: BulletManager | null = null;
+  private remoteBulletKillZones: Map<string, number> = new Map();
   private mpSendAccum   = 0;     // ms accumulator for 20 Hz send throttle
   private spectatorMode = false;
   private spectatorTargetIdx = 0;
@@ -399,6 +400,9 @@ export class GameScene extends Phaser.Scene {
     });
 
     this._addNetHandler('tileChanged', (d) => {
+      if (this.mapData.terrain[d.tileY]?.[d.tileX] === DisplayTile.Forest) {
+        this.remoteBulletKillZones.set(`${d.tileX},${d.tileY}`, Date.now() + 500);
+      }
       this.setTile(d.tileX, d.tileY, d.displayTile, false);
     });
 
@@ -1257,13 +1261,22 @@ export class GameScene extends Phaser.Scene {
       }
     }
     if (this.remoteBullets) {
+      const now = Date.now();
+      for (const [key, expiry] of this.remoteBulletKillZones) {
+        if (expiry <= now) this.remoteBulletKillZones.delete(key);
+      }
       for (const obj of this.remoteBullets.group.getChildren()) {
         const b = obj as Phaser.Physics.Arcade.Sprite;
         if (!b.active) continue;
         const tx = Math.floor(b.x / TILE_SIZE);
         const ty = Math.floor(b.y / TILE_SIZE);
-        if (this.mapData.terrain[ty]?.[tx] === DisplayTile.Forest) {
-          this.setTile(tx, ty, DisplayTile.Grass, false);
+        const key = `${tx},${ty}`;
+        const inKillZone = this.remoteBulletKillZones.has(key);
+        if (this.mapData.terrain[ty]?.[tx] === DisplayTile.Forest || inKillZone) {
+          if (inKillZone) this.remoteBulletKillZones.delete(key);
+          if (this.mapData.terrain[ty]?.[tx] === DisplayTile.Forest) {
+            this.setTile(tx, ty, DisplayTile.Grass, false);
+          }
           this.soundManager.playHitTree(this.soundDist(b.x, b.y));
           this.remoteBullets.kill(b);
         }
