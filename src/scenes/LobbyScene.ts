@@ -23,20 +23,20 @@ const WIN_COND_LABELS: Record<string, string> = {
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 const C = {
-  bg:       0x060d18,
-  panel:    0x0d1f33,
-  panelHi:  0x162d55,
-  border:   0x4488ff,
+  bg:        0x060d18,
+  panel:     0x0d1f33,
+  panelHi:   0x162d55,
+  border:    0x4488ff,
   borderDim: 0x2244aa,
-  green:    0x44aa44,
-  greenHi:  0x2a6a2a,
-  greenBg:  0x1a4a1a,
-  red:      0xaa3333,
-  text:     '#aaddff',
-  textDim:  '#445566',
-  textGrey: '#778899',
-  white:    '#ffffff',
-  gold:     '#ffdd44',
+  green:     0x44aa44,
+  greenHi:   0x2a6a2a,
+  greenBg:   0x1a4a1a,
+  red:       0xaa3333,
+  text:      '#aaddff',
+  textDim:   '#445566',
+  textGrey:  '#778899',
+  white:     '#ffffff',
+  gold:      '#ffdd44',
 };
 
 export class LobbyScene extends Phaser.Scene {
@@ -51,16 +51,16 @@ export class LobbyScene extends Phaser.Scene {
   private seedLabel!: Phaser.GameObjects.Text;
 
   // ── mode ─────────────────────────────────────────────────────────────────
-  private mode: 'solo' | 'multi' = 'solo';
+  private mode: 'solo' | 'multi' = 'multi';
   private view: LobbyView = 'browse';
 
   // ── mp lobby state ────────────────────────────────────────────────────────
   private roomList: RoomSummary[] = [];
   private mpPlayers: PlayerInfo[] = [];
-  private roomNameInput      = '';
-  private joinCodeInput      = '';
-  private nameInputFocused   = false;
-  private codeInputFocused   = false;
+  private roomNameInput    = '';
+  private joinCodeInput    = '';
+  private nameInputFocused = false;
+  private codeInputFocused = false;
   private createSettings: RoomSettings = {
     mapType:      'procedural',
     mapName:      '',
@@ -73,11 +73,19 @@ export class LobbyScene extends Phaser.Scene {
     timerSeconds: 600,
   };
 
-  // ── dynamic containers ────────────────────────────────────────────────────
-  private dynamicObjs: Phaser.GameObjects.GameObject[] = [];
+  // ── object pools ─────────────────────────────────────────────────────────
+  private dynamicObjs:   Phaser.GameObjects.GameObject[] = [];
+  private permanentObjs: Phaser.GameObjects.GameObject[] = [];
+  private refreshTimer?: Phaser.Time.TimerEvent;
   private keydownHandler?: (e: KeyboardEvent) => void;
 
-  // ── layout helpers ────────────────────────────────────────────────────────
+  // ── tab refs (rebuilt on resize) ──────────────────────────────────────────
+  private soloTab!:    Phaser.GameObjects.Rectangle;
+  private multiTab!:   Phaser.GameObjects.Rectangle;
+  private soloTabTxt!: Phaser.GameObjects.Text;
+  private multiTabTxt!: Phaser.GameObjects.Text;
+
+  // ── layout ────────────────────────────────────────────────────────────────
   private W  = 0;
   private H  = 0;
   private cx = 0;
@@ -94,41 +102,27 @@ export class LobbyScene extends Phaser.Scene {
     this.view      = 'browse';
     this.roomList  = [];
     this.mpPlayers = [];
-    this.dynamicObjs = [];
+    this.dynamicObjs   = [];
+    this.permanentObjs = [];
     this.createSettings.seed = this.seed;
 
-    // ── Background (permanent) ────────────────────────────────────────────
-    this.add.rectangle(this.cx, this.H / 2, this.W, this.H, C.bg);
-    const grid = this.add.graphics();
-    grid.lineStyle(1, 0x112233, 0.25);
-    for (let x = 0; x < this.W; x += 40) grid.lineBetween(x, 0, x, this.H);
-    for (let y = 0; y < this.H; y += 40) grid.lineBetween(0, y, this.W, y);
+    this._buildPermanent();
 
-    // ── Title ──────────────────────────────────────────────────────────────
-    const titleY = this.H * 0.10;
-    const boloText = this.add.text(0, titleY, 'BOLO', {
-      fontSize: '88px', color: '#88ccff', fontStyle: 'bold',
-      stroke: '#001133', strokeThickness: 12,
-    }).setOrigin(1, 0.5);
-    const onlineText = this.add.text(0, titleY + 6, 'ONLINE', {
-      fontSize: '56px', color: '#ff3333', fontStyle: 'bold italic',
-      stroke: '#330000', strokeThickness: 8,
-    }).setOrigin(0, 0.5);
-    const totalW = boloText.width + 10 + onlineText.width;
-    boloText.setX(this.cx - totalW / 2 + boloText.width);
-    onlineText.setX(this.cx - totalW / 2 + boloText.width + 10);
-
-    this.add.text(this.cx, this.H * 0.20, 'CLASSIC TANK COMBAT', {
-      fontSize: '18px', color: '#6699bb', fontStyle: 'bold', letterSpacing: 3,
-    }).setOrigin(0.5);
-
-    // ── Mode tabs ─────────────────────────────────────────────────────────
-    this._buildTabs();
+    // ── Resize ────────────────────────────────────────────────────────────
+    this.scale.on('resize', (gameSize: Phaser.Structs.Size) => {
+      this.W  = gameSize.width;
+      this.H  = gameSize.height;
+      this.cx = this.W / 2;
+      this._clearPermanent();
+      this._buildPermanent();
+      this._clearDynamic();
+      this._renderCurrentView();
+    });
 
     // ── Initial view ──────────────────────────────────────────────────────
     networkManager.connect();
     networkManager.listRooms();
-    this._renderMultiBrowse();
+    this._renderCurrentView();
 
     // ── Global keyboard handler ───────────────────────────────────────────
     this.keydownHandler = (e: KeyboardEvent) => this._onKey(e);
@@ -193,6 +187,7 @@ export class LobbyScene extends Phaser.Scene {
 
   shutdown() {
     this._cleanupListeners();
+    this.scale.off('resize');
   }
 
   // ─── Key handler ──────────────────────────────────────────────────────────
@@ -218,12 +213,65 @@ export class LobbyScene extends Phaser.Scene {
     }
   }
 
-  // ─── Tab bar ──────────────────────────────────────────────────────────────
+  // ─── Permanent objects ────────────────────────────────────────────────────
 
-  private soloTab!: Phaser.GameObjects.Rectangle;
-  private multiTab!: Phaser.GameObjects.Rectangle;
-  private soloTabTxt!: Phaser.GameObjects.Text;
-  private multiTabTxt!: Phaser.GameObjects.Text;
+  private _buildPermanent() {
+    const { cx, W, H } = this;
+
+    // Background
+    this._pushP(this.add.rectangle(cx, H / 2, W, H, C.bg));
+    const grid = this.add.graphics();
+    grid.lineStyle(1, 0x112233, 0.25);
+    for (let x = 0; x < W; x += 40) grid.lineBetween(x, 0, x, H);
+    for (let y = 0; y < H; y += 40) grid.lineBetween(0, y, W, y);
+    this._pushP(grid);
+
+    // Title
+    const titleY    = H * 0.10;
+    const boloText  = this._pushP(this.add.text(0, titleY, 'BOLO', {
+      fontSize: '88px', color: '#88ccff', fontStyle: 'bold',
+      stroke: '#001133', strokeThickness: 12,
+    }).setOrigin(1, 0.5)) as Phaser.GameObjects.Text;
+    const onlineText = this._pushP(this.add.text(0, titleY + 6, 'ONLINE', {
+      fontSize: '56px', color: '#ff3333', fontStyle: 'bold italic',
+      stroke: '#330000', strokeThickness: 8,
+    }).setOrigin(0, 0.5)) as Phaser.GameObjects.Text;
+    const totalW = boloText.width + 10 + onlineText.width;
+    boloText.setX(cx - totalW / 2 + boloText.width);
+    onlineText.setX(cx - totalW / 2 + boloText.width + 10);
+
+    this._pushP(this.add.text(cx, H * 0.20, 'CLASSIC TANK COMBAT', {
+      fontSize: '18px', color: '#6699bb', fontStyle: 'bold', letterSpacing: 3,
+    }).setOrigin(0.5));
+
+    this._buildTabs();
+  }
+
+  private _clearPermanent() {
+    for (const obj of this.permanentObjs) { obj.destroy(); }
+    this.permanentObjs = [];
+  }
+
+  private _pushP<T extends Phaser.GameObjects.GameObject>(obj: T): T {
+    this.permanentObjs.push(obj);
+    return obj;
+  }
+
+  // ─── View dispatcher ──────────────────────────────────────────────────────
+
+  private _renderCurrentView() {
+    if (this.mode === 'solo') {
+      this._renderSolo();
+    } else if (this.view === 'create') {
+      this._renderCreate();
+    } else if (this.view === 'room') {
+      this._renderRoom();
+    } else {
+      this._renderMultiBrowse();
+    }
+  }
+
+  // ─── Tab bar ──────────────────────────────────────────────────────────────
 
   private _buildTabs() {
     const ty  = this.H * 0.27;
@@ -231,19 +279,30 @@ export class LobbyScene extends Phaser.Scene {
     const th  = 36;
     const gap = 8;
 
-    this.soloTab = this.add.rectangle(this.cx - tw / 2 - gap / 2, ty, tw, th, C.panel)
+    // Multiplayer on LEFT, Solo on RIGHT
+    this.multiTab = this._pushP(this.add.rectangle(this.cx - tw / 2 - gap / 2, ty, tw, th, C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this._setMode('solo'));
-    this.soloTabTxt = this.add.text(this.cx - tw / 2 - gap / 2, ty, 'SOLO', {
+      .on('pointerdown', () => this._setMode('multi'))) as Phaser.GameObjects.Rectangle;
+    this.multiTabTxt = this._pushP(this.add.text(this.cx - tw / 2 - gap / 2, ty, 'MULTIPLAYER', {
       fontSize: '14px', color: C.textDim, fontStyle: 'bold',
-    }).setOrigin(0.5);
+    }).setOrigin(0.5)) as Phaser.GameObjects.Text;
 
-    this.multiTab = this.add.rectangle(this.cx + tw / 2 + gap / 2, ty, tw, th, C.panelHi)
-      .setStrokeStyle(1, C.border).setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this._setMode('multi'));
-    this.multiTabTxt = this.add.text(this.cx + tw / 2 + gap / 2, ty, 'MULTIPLAYER', {
-      fontSize: '14px', color: C.text, fontStyle: 'bold',
-    }).setOrigin(0.5);
+    this.soloTab = this._pushP(this.add.rectangle(this.cx + tw / 2 + gap / 2, ty, tw, th, C.panel)
+      .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this._setMode('solo'))) as Phaser.GameObjects.Rectangle;
+    this.soloTabTxt = this._pushP(this.add.text(this.cx + tw / 2 + gap / 2, ty, 'SOLO', {
+      fontSize: '14px', color: C.textDim, fontStyle: 'bold',
+    }).setOrigin(0.5)) as Phaser.GameObjects.Text;
+
+    // Reflect current active mode
+    const [activTab, inactTab] = this.mode === 'multi'
+      ? [this.multiTab, this.soloTab] : [this.soloTab, this.multiTab];
+    const [activTxt, inactTxt] = this.mode === 'multi'
+      ? [this.multiTabTxt, this.soloTabTxt] : [this.soloTabTxt, this.multiTabTxt];
+    activTab.setFillStyle(C.panelHi).setStrokeStyle(1, C.border);
+    inactTab.setFillStyle(C.panel).setStrokeStyle(1, C.borderDim);
+    activTxt.setStyle({ color: C.text });
+    inactTxt.setStyle({ color: C.textDim });
   }
 
   private _setMode(m: 'solo' | 'multi') {
@@ -253,13 +312,10 @@ export class LobbyScene extends Phaser.Scene {
     this.nameInputFocused = false;
     this.codeInputFocused = false;
 
-    // Update tab styles
     const [activTab, inactTab] = m === 'solo'
-      ? [this.soloTab,  this.multiTab]
-      : [this.multiTab, this.soloTab];
+      ? [this.soloTab,  this.multiTab] : [this.multiTab, this.soloTab];
     const [activTxt, inactTxt] = m === 'solo'
-      ? [this.soloTabTxt,  this.multiTabTxt]
-      : [this.multiTabTxt, this.soloTabTxt];
+      ? [this.soloTabTxt,  this.multiTabTxt] : [this.multiTabTxt, this.soloTabTxt];
     activTab.setFillStyle(C.panelHi).setStrokeStyle(1, C.border);
     inactTab.setFillStyle(C.panel).setStrokeStyle(1, C.borderDim);
     activTxt.setStyle({ color: C.text });
@@ -278,6 +334,8 @@ export class LobbyScene extends Phaser.Scene {
   // ─── Dynamic object management ────────────────────────────────────────────
 
   private _clearDynamic() {
+    this.refreshTimer?.remove(false);
+    this.refreshTimer = undefined;
     for (const obj of this.dynamicObjs) { obj.destroy(); }
     this.dynamicObjs = [];
   }
@@ -353,10 +411,10 @@ export class LobbyScene extends Phaser.Scene {
     this._push(this.add.text(px + 52, cardY + 8, 'Random', { fontSize: '13px', color: '#aabbcc' }).setOrigin(0.5));
 
     // File card
-    const fx      = cx + CARD_W / 2 + gap / 2;
-    const fCol    = this.hasMap ? C.panel : 0x0a0a12;
-    const fBord   = this.hasMap ? 0x44aa44 : 0x222233;
-    const fTxt    = this.hasMap ? '#aaffaa' : '#333344';
+    const fx    = cx + CARD_W / 2 + gap / 2;
+    const fCol  = this.hasMap ? C.panel : 0x0a0a12;
+    const fBord = this.hasMap ? 0x44aa44 : 0x222233;
+    const fTxt  = this.hasMap ? '#aaffaa' : '#333344';
 
     this.fileCard = this._push(this.add.rectangle(fx, cardY, CARD_W, CARD_H, fCol)
       .setStrokeStyle(2, fBord).setInteractive({ useHandCursor: this.hasMap })
@@ -417,27 +475,65 @@ export class LobbyScene extends Phaser.Scene {
     const { cx, H, W } = this;
     const topY = H * 0.35;
 
-    // Section header
-    this._push(this.add.text(cx, topY - 24, 'PUBLIC ROOMS', { fontSize: '13px', color: C.textDim, letterSpacing: 3 }).setOrigin(0.5));
+    // ── Join by code ──────────────────────────────────────────────────────
+    this._push(this.add.text(cx, topY, 'Join by code:', { fontSize: '13px', color: C.textDim }).setOrigin(0.5));
 
-    // Refresh button
-    const refreshBtn = this._push(this.add.rectangle(W - 80, topY - 24, 100, 22, 0x0d2a4a)
+    this._push(this.add.rectangle(cx - 40, topY + 22, 130, 28, 0x08121e)
+      .setStrokeStyle(1, this.codeInputFocused ? C.border : 0x2244aa)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => { this.codeInputFocused = true; this._renderMultiBrowse(); })
+    );
+    this._push(this.add.text(cx - 40, topY + 22, this.joinCodeInput || '_ _ _ _ _ _', {
+      fontSize: '16px', color: this.joinCodeInput ? C.white : '#334455', fontStyle: 'bold', letterSpacing: 4,
+    }).setOrigin(0.5));
+
+    const joinBtn = this._push(this.add.rectangle(cx + 82, topY + 22, 70, 28, C.greenBg)
+      .setStrokeStyle(1, C.green).setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this._joinByCode())
+      .on('pointerover', () => (joinBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.greenHi))
+      .on('pointerout',  () => (joinBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.greenBg))
+    );
+    this._push(this.add.text(cx + 82, topY + 22, 'JOIN', { fontSize: '14px', color: '#88ff88', fontStyle: 'bold' }).setOrigin(0.5));
+
+    // Click outside code box to unfocus
+    this.input.once('pointerdown', (ptr: Phaser.Input.Pointer) => {
+      if (Math.abs(ptr.x - (cx - 40)) > 70 || Math.abs(ptr.y - (topY + 22)) > 14) {
+        this.codeInputFocused = false;
+      }
+    });
+
+    // ── Create room ───────────────────────────────────────────────────────
+    const createY = topY + 68;
+    const createBtn = this._push(this.add.rectangle(cx, createY, 220, 48, C.panel)
+      .setStrokeStyle(2, C.border).setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => { this.view = 'create'; this._renderCreate(); })
+      .on('pointerover', () => (createBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panelHi))
+      .on('pointerout',  () => (createBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panel))
+    );
+    this._push(this.add.text(cx, createY, '＋  CREATE ROOM', { fontSize: '18px', color: C.text, fontStyle: 'bold' }).setOrigin(0.5));
+
+    // ── Public rooms ──────────────────────────────────────────────────────
+    const pubY = createY + 52;
+
+    this._push(this.add.text(cx, pubY, 'PUBLIC ROOMS', { fontSize: '13px', color: C.textDim, letterSpacing: 3 }).setOrigin(0.5));
+
+    const refreshBtn = this._push(this.add.rectangle(W - 80, pubY, 100, 22, 0x0d2a4a)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => networkManager.listRooms())
       .on('pointerover', () => (refreshBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panelHi))
       .on('pointerout',  () => (refreshBtn as Phaser.GameObjects.Rectangle).setFillStyle(0x0d2a4a))
     );
-    this._push(this.add.text(W - 80, topY - 24, '↻  Refresh', { fontSize: '13px', color: C.textGrey }).setOrigin(0.5));
+    this._push(this.add.text(W - 80, pubY, '↻  Refresh', { fontSize: '13px', color: C.textGrey }).setOrigin(0.5));
 
-    // Room list area
-    const listH = H * 0.30;
-    const listW = W - 80;
-    this._push(this.add.rectangle(cx, topY + listH / 2, listW, listH, 0x08121e).setStrokeStyle(1, 0x1a3355));
+    const listTop = pubY + 16;
+    const listH   = Math.max(60, H - listTop - 16);
+    const listW   = W - 80;
+    this._push(this.add.rectangle(cx, listTop + listH / 2, listW, listH, 0x08121e).setStrokeStyle(1, 0x1a3355));
 
     if (this.roomList.length === 0) {
-      this._push(this.add.text(cx, topY + listH / 2, 'No public rooms — create one!', { fontSize: '14px', color: '#334455' }).setOrigin(0.5));
+      this._push(this.add.text(cx, listTop + listH / 2, 'No public rooms — create one!', { fontSize: '14px', color: '#334455' }).setOrigin(0.5));
     } else {
-      let ry = topY + 8;
+      let ry = listTop + 8;
       for (const room of this.roomList.slice(0, 5)) {
         const rowBg = this._push(this.add.rectangle(cx, ry + 14, listW - 16, 30, 0x0d1f33)
           .setStrokeStyle(1, 0x1a3355).setInteractive({ useHandCursor: true })
@@ -452,45 +548,8 @@ export class LobbyScene extends Phaser.Scene {
       }
     }
 
-    // Join by code
-    const codeY = topY + listH + 24;
-    this._push(this.add.text(cx, codeY, 'Join by code:', { fontSize: '13px', color: C.textDim }).setOrigin(0.5));
-
-    this._push(this.add.rectangle(cx - 40, codeY + 22, 130, 28, 0x08121e)
-      .setStrokeStyle(1, this.codeInputFocused ? C.border : 0x2244aa)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => { this.codeInputFocused = true; this._renderMultiBrowse(); })
-    );
-    this._push(this.add.text(cx - 40, codeY + 22, this.joinCodeInput || '_ _ _ _ _ _', {
-      fontSize: '16px', color: this.joinCodeInput ? C.white : '#334455', fontStyle: 'bold', letterSpacing: 4,
-    }).setOrigin(0.5));
-
-    const joinBtn = this._push(this.add.rectangle(cx + 82, codeY + 22, 70, 28, C.greenBg)
-      .setStrokeStyle(1, C.green).setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this._joinByCode())
-      .on('pointerover', () => (joinBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.greenHi))
-      .on('pointerout',  () => (joinBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.greenBg))
-    );
-    this._push(this.add.text(cx + 82, codeY + 22, 'JOIN', { fontSize: '14px', color: '#88ff88', fontStyle: 'bold' }).setOrigin(0.5));
-
-    // Click outside code box to unfocus
-    this.input.once('pointerdown', (ptr: Phaser.Input.Pointer) => {
-      const bx = cx - 40;
-      const by = codeY + 22;
-      if (Math.abs(ptr.x - bx) > 70 || Math.abs(ptr.y - by) > 14) {
-        this.codeInputFocused = false;
-      }
-    });
-
-    // Create room button
-    const createY = codeY + 64;
-    const createBtn = this._push(this.add.rectangle(cx, createY, 220, 48, C.panel)
-      .setStrokeStyle(2, C.border).setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => { this.view = 'create'; this._renderCreate(); })
-      .on('pointerover', () => (createBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panelHi))
-      .on('pointerout',  () => (createBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panel))
-    );
-    this._push(this.add.text(cx, createY, '＋  CREATE ROOM', { fontSize: '18px', color: C.text, fontStyle: 'bold' }).setOrigin(0.5));
+    // ── Auto-refresh every 5 s ────────────────────────────────────────────
+    this.refreshTimer = this.time.addEvent({ delay: 5000, callback: () => networkManager.listRooms(), loop: true });
   }
 
   private _joinByCode() {
@@ -533,7 +592,7 @@ export class LobbyScene extends Phaser.Scene {
     let gy = topY + 55;
     const rowH = 30;
 
-    // Map type toggle
+    // Map type
     this._push(this.add.text(cx - 150, gy, 'Map:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const mapProcBtn = this._push(this.add.rectangle(cx + 10, gy, 80, 22,
       this.createSettings.mapType === 'procedural' ? C.panelHi : C.panel)
@@ -607,7 +666,7 @@ export class LobbyScene extends Phaser.Scene {
     void ffBtn;
     gy += rowH;
 
-    // Public/Private
+    // Visibility
     this._push(this.add.text(cx - 150, gy, 'Visibility:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const pubActive = this.createSettings.isPublic;
     const pubBtn = this._push(this.add.rectangle(cx + 10, gy, 70, 22, pubActive ? C.panelHi : C.panel)
@@ -632,17 +691,17 @@ export class LobbyScene extends Phaser.Scene {
     );
     this._push(this.add.text(cx + 50, gy, '+', { fontSize: '16px', color: C.text }).setOrigin(0.5));
     void decBtn; void incBtn;
-
     gy += rowH;
+
     // Game length
     this._push(this.add.text(cx - 150, gy, 'Game length:', { fontSize: '15px', color: C.textDim }).setOrigin(0, 0.5));
     const durations = [5 * 60, 10 * 60, 20 * 60, 30 * 60];
     const durLabels = ['5 min', '10 min', '20 min', '30 min'];
     let dx = cx - 110;
     for (let di = 0; di < durations.length; di++) {
-      const dur = durations[di];
+      const dur    = durations[di];
       const active = this.createSettings.timerSeconds === dur;
-      const dBtn = this._push(this.add.rectangle(dx, gy, 60, 22, active ? C.panelHi : C.panel)
+      const dBtn   = this._push(this.add.rectangle(dx, gy, 60, 22, active ? C.panelHi : C.panel)
         .setStrokeStyle(1, active ? C.border : C.borderDim).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => { this.createSettings.timerSeconds = dur; this._renderCreate(); })
       );
@@ -672,8 +731,8 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   private _createRoom() {
-    const name  = localStorage.getItem(STORAGE_NAME)  ?? 'Player';
-    const color = localStorage.getItem(STORAGE_COLOR) ?? 'ffffff';
+    const name     = localStorage.getItem(STORAGE_NAME)  ?? 'Player';
+    const color    = localStorage.getItem(STORAGE_COLOR) ?? 'ffffff';
     const roomName = this.roomNameInput.trim() || `${name}'s Room`;
     this.createSettings.seed = (Math.random() * 0xFFFFFF) | 0;
     if (this.uploadedMapData && this.createSettings.mapType === 'bmap') {
@@ -719,7 +778,6 @@ export class LobbyScene extends Phaser.Scene {
         `${p.name}${isMe ? ' (you)' : ''}${!p.connected ? ' (DC)' : ''}`,
         { fontSize: '14px', color: p.connected ? C.text : C.textDim }).setOrigin(0, 0.5));
 
-      // Kick button (host only, not self)
       if (isHost && p.playerId !== net.playerId) {
         const kickBtn = this._push(this.add.rectangle(cx + 140, py + 10, 40, 18, 0x2a0808)
           .setStrokeStyle(1, 0x662222).setInteractive({ useHandCursor: true })
@@ -787,16 +845,15 @@ export class LobbyScene extends Phaser.Scene {
       window.removeEventListener('keydown', this.keydownHandler);
       this.keydownHandler = undefined;
     }
-    // Remove NM listeners (re-added on next create())
-    networkManager.off('roomList',        () => {});
-    networkManager.off('roomJoined',      () => {});
-    networkManager.off('playerJoined',    () => {});
-    networkManager.off('playerRemoved',   () => {});
-    networkManager.off('playerGhosted',   () => {});
+    networkManager.off('roomList',          () => {});
+    networkManager.off('roomJoined',        () => {});
+    networkManager.off('playerJoined',      () => {});
+    networkManager.off('playerRemoved',     () => {});
+    networkManager.off('playerGhosted',     () => {});
     networkManager.off('playerReconnected', () => {});
-    networkManager.off('settingsUpdated', () => {});
-    networkManager.off('hostChanged',     () => {});
-    networkManager.off('error',           () => {});
-    networkManager.off('gameStart',       () => {});
+    networkManager.off('settingsUpdated',   () => {});
+    networkManager.off('hostChanged',       () => {});
+    networkManager.off('error',             () => {});
+    networkManager.off('gameStart',         () => {});
   }
 }
