@@ -161,20 +161,21 @@ interface GameSceneInitData {
 ### Initialisation order (`create()`)
 
 1. `loadMapData()` — checks `gameStart.settings.mapData` (base64 inline), then Phaser cache `'mapdata'`, then falls back to `generateTestMap(seed)`
-2. `buildTilemap()` — create Phaser tilemap + `groundLayer`, call `initRoadVisuals()`, `renderMapObjects()`
-3. `spawnTank()` — create Tank at `starts[0]`, apply stored team color tint
-4. `new BulletManager` × 2 (`playerBullets`, `pillboxBullets`)
-5. `new PillboxManager` — one Pillbox per `mapData.pills` entry
-6. `new Builder` — with terrain speed callback
-7. If `multiplayerMode`: `new GhostTankManager`, `new BulletManager` (`remoteBullets`)
-8. `setupCollision()` — all physics colliders and overlaps (includes ghost overlap if MP)
-9. `setupCamera()` — `cameras.main` viewport at `(PANEL_WIDTH, 0, W-PANEL_WIDTH, H)`, follows tank
-10. `new InputHandler`, `new ActionPanel`, `new SettingsPanel`
-11. `buildHUD()`, `setupUiCamera()`, `buildMinimap()`
-12. `new SoundManager()`, resume on first pointer/key event
-13. `setupWorldClick()`
-14. `buildTimerHUD()`
-15. If `multiplayerMode`: `setupMultiplayer()`
+2. `baseGroup = physics.add.group()` — **must precede `buildTilemap()`**; `renderMapObjects()` adds hit sprites to this group
+3. `buildTilemap()` — create Phaser tilemap + `groundLayer`, call `initRoadVisuals()`, `renderMapObjects()`
+4. `spawnTank()` — create Tank at `starts[0]`, apply stored team color tint
+5. `new BulletManager` × 2 (`playerBullets`, `pillboxBullets`)
+6. `new PillboxManager` — one Pillbox per `mapData.pills` entry
+7. `new Builder` — with terrain speed callback
+8. If `multiplayerMode`: `new GhostTankManager`, `new BulletManager` (`remoteBullets`)
+9. `setupCollision()` — all physics colliders and overlaps (includes ghost overlap if MP)
+10. `setupCamera()` — `cameras.main` viewport at `(PANEL_WIDTH, 0, W-PANEL_WIDTH, H)`, follows tank
+11. `new InputHandler`, `new ActionPanel`, `new SettingsPanel`
+12. `buildHUD()`, `setupUiCamera()`, `buildMinimap()`
+13. `new SoundManager()`, resume on first pointer/key event
+14. `setupWorldClick()`
+15. `buildTimerHUD()`
+16. If `multiplayerMode`: `setupMultiplayer()`
 
 ### `setupMultiplayer()`
 

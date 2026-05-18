@@ -16,8 +16,8 @@ Five entity types drive gameplay: Tank (local player), GhostTank (remote players
 | Property | Default | Max | Notes |
 |---|---|---|---|
 | `health` | 10 | 10 | Pillbox bullet: 1 damage; mine: 3 damage; player bullet (MP): 1 damage |
-| `shells` | 200 | 200 | Refilled to 200 at bases |
-| `mines` | 5 | 20 | Refilled +5 at bases |
+| `shells` | 200 | 200 | +10 per refuel tick at friendly base (draws from base supply) |
+| `mines` | 5 | 20 | +1 per refuel tick at friendly base (draws from base supply) |
 | `trees` | 0 | 40 | Harvested from forest tiles |
 | `pillsCarried` | 0 | 1 | Collected by driving over a pill pickup |
 
