@@ -182,6 +182,7 @@ interface GameSceneInitData {
 1. Adds all existing players (from `networkManager.players`) as ghost tanks except self
 2. If `isHost`: broadcasts all initial pillbox and base states as neutral via `sendPillboxUpdate` / `sendBaseUpdate` — pre-populates server snapshot so domination win condition has full objective count
 3. Registers all net event handlers via `_addNetHandler()` (stored in `_netHandlers[]` for cleanup)
+4. Calls `networkManager.sendRequestSnapshot()` — requests a fresh `stateSnapshot` now that all handlers are registered. The server sends a snapshot immediately on join but it arrives before `create()` runs and is dropped; this call is the reliable recovery path.
 
 ### Update loop order (per frame)
 
@@ -200,7 +201,7 @@ interface GameSceneInitData {
 13. `checkPillPickup()`, `checkMines()`, `checkBaseInteraction()`
 14. `settingsPanel.update(delta)`
 15. `updateMinimap()`, `updateHUD()`
-16. 20 Hz tank state send (MP only): accumulator-gated, emits `sendTankState()`
+16. 20 Hz send tick (MP only): accumulator-gated, emits `sendTankState()` and `sendSoldierState(builder.x, builder.y, builder.isBusy)`
 
 ### `shutdown()`
 
@@ -220,6 +221,8 @@ No `setBounds` on either camera. A 16-tile sea border ensures map tiles always f
 ### Spectator mode (MP)
 
 When the local tank dies in MP, `spectatorMode = true`. Q/E keys cycle `spectatorTargetIdx` through `ghostManager.getAlivePlayerIds()`. `cameras.main.startFollow(ghostSprite)` tracks the selected ghost. On respawn, camera re-attaches to local tank.
+
+A `spectatorText` element (depth 30, scrollFactor 0, centered in viewport) shows "SPECTATING: [name]   [Q] / [E] to switch" while in spectator mode and is hidden on respawn.
 
 ### Minimap
 

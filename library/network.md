@@ -90,16 +90,20 @@ startGame()
 ### In-game emissions
 
 ```typescript
-sendTankState(state)                  // volatile, 20 Hz
+sendTankState(state)                          // volatile, 20 Hz
 sendBulletFired(x, y, angleDeg)
 sendBulletHit(targetId, damage)
-sendPlayerKillSelf(killerId)         // victim reports own death
+sendPlayerKillSelf(killerId)                 // victim reports own death
 sendTileChanged(tileX, tileY, tile)
 sendPillboxUpdate(idx, ownerId, health, alive)
 sendBaseUpdate(idx, ownerId)
 sendMineAdded(tileX, tileY)
 sendMineDetonated(tileX, tileY)
 sendBoatAdded(tileX, tileY)
+sendSoldierState(x, y, active)               // volatile, 20 Hz — builder position sync
+sendPillboxBulletFired(pillIndex, x, y, ang) // host only — relayed to non-hosts
+sendPillboxFire(pillIndex, angleDeg)         // host only — relayed to non-hosts
+sendRequestSnapshot()                        // called once at end of setupMultiplayer()
 ```
 
 ### Event subscription
@@ -155,13 +159,15 @@ States: `LOBBY → PLAYING → ENDED`
 #### World snapshot
 
 `getSnapshot(): S2C_StateSnapshot` — used for late joiners. Contains:
-- `terrainDiffs[]` — every tile mutated since game start
+- `terrainDiffs[]` — every tile mutated since game start; deduplicated by `(tileX, tileY)` — a later mutation to the same tile overwrites the earlier entry
 - `pillboxStates[]` — all known pill states (index, owner, health, alive)
 - `baseStates[]` — all known base states (index, owner)
-- `mines[]` — all active mines
-- `boats[]` — all placed boats
+- `mines[]` — all active mines; entries removed on `mineDetonated`
+- `boats[]` — all placed boats; entries pruned when their tile is overwritten via `updateTileChanged()` (a tile mutation means the boat is gone)
 - `tankStates[]` — last known tank state per player
 - `timeElapsed` — ms since game start
+
+**Late-joiner snapshot request:** The server sends `stateSnapshot` immediately after `gameStart` for rooms already in PLAYING state. However, `scene.start()` in Phaser queues the new scene for the next animation frame — `setupMultiplayer()` hasn't registered its event handlers yet when the snapshot arrives, so it is silently dropped. To compensate, `setupMultiplayer()` calls `sendRequestSnapshot()` at the end, after all handlers are wired. The server responds with a fresh `stateSnapshot` on demand.
 
 ---
 
@@ -190,6 +196,9 @@ States: `LOBBY → PLAYING → ENDED`
 | `mineDetonated` | `{ tileX, tileY }` | Relayed + snapshot mine removed |
 | `boatAdded` | `{ tileX, tileY }` | Relayed + stored in snapshot |
 | `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Host only; server relays to all other clients |
+| `pillboxFire` | `{ pillIndex, angleDeg }` | Host only; server relays to all other clients |
+| `soldierState` | `{ x, y, active }` | Volatile; server relays with `playerId` appended |
+| `requestSnapshot` | — | Any client; server responds with `stateSnapshot` |
 | `ping` | callback | Server acks; client measures round-trip |
 
 ### S2C (server → client)
@@ -218,6 +227,8 @@ States: `LOBBY → PLAYING → ENDED`
 | `boatAdded` | `{ tileX, tileY }` | |
 | `timeUpdate` | `{ remaining: number }` | ms remaining; drives client timer in MP |
 | `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Relayed from host to all other clients |
+| `pillboxFire` | `{ pillIndex, angleDeg }` | Relayed from host to all other clients |
+| `soldierState` | `{ playerId, x, y, active }` | Builder position; relayed volatile from server |
 | `playerKill` | `{ killerId, killerName, victimId, victimName }` | Broadcast to room |
 | `gameOver` | `S2C_GameOver` | reason, winnerId, winnerName, scores[] |
 | `kicked` | — | Sent to kicked player before removal |
@@ -252,9 +263,9 @@ In multiplayer, only the host runs the full pillbox AI each frame:
 
 1. Host builds a `PillTarget[]` list: local tank (if alive) + all alive ghost positions (`ghostManager.getAlivePillTargets()`).
 2. `pillboxes.update()` picks the nearest visible target per pill, fires into `pillboxBullets`, calls `onShot(pillIndex, x, y, angleDeg)`.
-3. Host emits `pillboxBulletFired { pillIndex, x, y, angleDeg }` to the server.
-4. Server relays to **all other clients** (host excluded — it already fired locally).
-5. Non-host clients receive the event, set `pillboxes.pills[pillIndex].sprite.angle = angleDeg`, fire the bullet into their local `pillboxBullets` pool, and play the sound.
+3. Host emits `pillboxBulletFired { pillIndex, x, y, angleDeg }` and `pillboxFire { pillIndex, angleDeg }` to the server.
+4. Server relays both to **all other clients** (host excluded — it already fired locally).
+5. Non-host clients receive `pillboxFire`, call `pill.setFacing(angleDeg)` and `pill.fireAt(angleDeg, pillboxBullets)`, and play the sound.
 6. The existing `pillboxBullets` vs `tank.sprite` overlap on each machine detects damage locally — no new hit protocol needed.
 7. `pillboxBullets` vs `ghostManager.group` overlap (Phase 2) kills the bullet visually when it reaches a ghost sprite on spectator screens.
 

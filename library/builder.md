@@ -40,6 +40,8 @@ dispatch(toX, toY, getReturnPos, onArrive)  // no-op if isBusy
 cancel()                                     // abort and return immediately
 update(delta)                                // called every frame by GameScene
 get isBusy: boolean
+get x: number                                // world pixel x — read by GameScene for soldierState sync
+get y: number                                // world pixel y — read by GameScene for soldierState sync
 ```
 
 ---

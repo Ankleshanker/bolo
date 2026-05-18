@@ -87,6 +87,7 @@ Each ghost keeps a circular buffer of up to 3 `TankState` snapshots. The render 
 addGhost(playerId, name, color, teamIndex)                    // create sprite + label + health bar
 removeGhost(playerId)                                         // destroy all objects
 updateSnapshot(state: TankState)                             // push new interpolation frame
+updateSoldier(playerId, x, y, active)                        // show/move/hide remote builder soldier sprite
 setGhosted(playerId, disconnected: boolean)                  // toggle DC visual
 getSpriteByPlayerId(playerId): Sprite | undefined             // for spectator camera follow
 getPlayerIdBySprite(sprite): string | undefined              // for bullet hit / tank push attribution
@@ -140,11 +141,17 @@ Immovable circle: radius 12, offset (4, 4). Blocks tank and builder soldier.
 2. Select `buildPillbox` action, click target tile (10 trees + 1 pill required)
 3. Builder soldier arrives → `PillboxManager.addPill(tileX, tileY)` creates a new friendly pillbox
 
+### Key methods (multiplayer)
+
+- `setFacing(angleDeg)` — rotates the sprite to the given angle; used by non-host clients when receiving `pillboxFire` events
+- `fireAt(angleDeg, bullets)` — fires a bullet from the barrel tip at the given angle; used by non-host clients to replicate host-authoritative shots
+
 ### Multiplayer sync
 
 - When a pillbox is damaged/destroyed by the local player: `networkManager.sendPillboxUpdate(idx, ownerId, health, alive)`
 - When received: `pill.capture(owner)` sets texture + stops shooting; `pill.health = d.health`
 - On `setupMultiplayer()`: the **host** pre-broadcasts all pills as neutral to seed the server snapshot (prevents false domination win)
+- Non-host clients receive `pillboxFire { pillIndex, angleDeg }` and call `pill.setFacing()` + `pill.fireAt()` to replicate the bullet locally
 
 ---
 

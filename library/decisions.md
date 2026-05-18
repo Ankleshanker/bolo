@@ -131,6 +131,24 @@
 
 ---
 
+## Late-joiner snapshot requested by client, not relied on from server — 2026-05-18
+
+**Decision:** At the end of `setupMultiplayer()`, after all net event handlers are registered, the client calls `networkManager.sendRequestSnapshot()`. This is the canonical mechanism for late joiners to receive current world state.
+**Why:** The server sends `stateSnapshot` alongside `gameStart` for rooms in PLAYING state. But `scene.start()` queues the new scene for the next `requestAnimationFrame` tick — by the time the server's snapshot arrives over the WebSocket, `GameScene.create()` hasn't run and the `stateSnapshot` handler hasn't been registered. The event is silently dropped. Requesting it at the end of `setupMultiplayer()` guarantees the handler is in place when the response arrives.
+**Alternatives rejected:** Buffering events in NetworkManager before any handler is registered — complicates the singleton and risks replaying stale data. Delaying `scene.start()` — requires artificial waits or more complex coordination with the Phaser scene pipeline.
+**Applies to:** `src/scenes/GameScene.ts` (`setupMultiplayer`), `src/network/NetworkManager.ts` (`sendRequestSnapshot`), `server/src/index.ts` (`requestSnapshot` handler).
+
+---
+
+## Boat snapshot entries pruned on tile change — 2026-05-18
+
+**Decision:** `GameRoom.updateTileChanged()` calls `removeBoatAt(tileX, tileY)` whenever a tile mutation is recorded, evicting any boat at that position from `snapshot.boats`.
+**Why:** Boats sit on shallow water tiles. If a builder later fills that tile (e.g., road), all live clients destroy the boat via `tileChanged` — but without this fix the server snapshot still listed the boat. A late joiner would receive the snapshot, place a phantom boat sprite, and then receive the tile as non-water. Pruning in the same call that records the tile change keeps the snapshot self-consistent.
+**Alternatives rejected:** Sending an explicit `boatRemoved` event — the tile change is already the signal; a separate event would be redundant and add a new event type.
+**Applies to:** `server/src/GameRoom.ts` (`updateTileChanged`, `removeBoatAt`).
+
+---
+
 ## Host-authoritative pillbox AI — 2026-05-17
 
 **Decision:** In multiplayer, only the host runs the full pillbox AI (picks nearest of all alive players, fires bullets, broadcasts `pillboxBulletFired {pillIndex, x, y, angleDeg}`). Non-hosts suppress local bullet firing (`bullets = null`) and fire locally only on receipt of the broadcast, relying on the existing `pillboxBullets` vs `tank.sprite` overlap for damage detection.
