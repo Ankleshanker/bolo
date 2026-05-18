@@ -957,7 +957,7 @@ export class GameScene extends Phaser.Scene {
       this.cameras.main.setViewport(PANEL_WIDTH, 0, gameSize.width - PANEL_WIDTH, gameSize.height);
       this.uiCam.setSize(PANEL_WIDTH, gameSize.height);
       this.minimapTerrain?.setPosition(this._minimapObjX(), this._minimapObjY());
-      this.chyron.onResize(gameSize.width - PANEL_WIDTH, gameSize.width, gameSize.height);
+      this.chyron.onResize(gameSize.width - PANEL_WIDTH, gameSize.height);
     });
   }
 
@@ -1452,7 +1452,7 @@ export class GameScene extends Phaser.Scene {
       trees:  makeBar('icon_wood',   3, 0x7a5230),
     };
 
-    this.chyron = new Chyron(this, this.scale.width - PANEL_WIDTH, this.scale.width, this.scale.height);
+    this.chyron = new Chyron(this, this.scale.width - PANEL_WIDTH, this.scale.height);
   }
 
   private readonly TERRAIN_NAMES: Record<number, string> = {
