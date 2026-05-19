@@ -210,6 +210,9 @@ export class PillboxManager {
   ) {
     for (let i = 0; i < this.pills.length; i++) {
       const pill = this.pills[i];
+      // Without a team-filter callback (single-player, non-host rotation pass),
+      // preserve the original behaviour: friendly pills are inert.
+      if (!isTeammate && pill.owner === 'friendly') continue;
       const pillTargets = isTeammate
         ? targets.filter(t => !isTeammate(pill.ownerId, t.playerId))
         : targets;
