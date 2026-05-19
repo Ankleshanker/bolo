@@ -12,19 +12,24 @@ const MAX_HEALTH      = 4;
 export type PillOwner = 'neutral' | 'friendly' | 'enemy';
 
 /** A target position passed to pillbox AI. `hidden` = true means the target is
- *  concealed in forest and should be ignored. */
+ *  concealed in forest and should be ignored. `playerId` is used by the host
+ *  to filter out same-team targets for player-owned pillboxes. */
 export interface PillTarget {
-  x:       number;
-  y:       number;
-  hidden?: boolean;
+  x:         number;
+  y:         number;
+  hidden?:   boolean;
+  playerId?: string;
 }
 
 export class Pillbox {
   readonly sprite:      Phaser.Physics.Arcade.Sprite;
   private  crackSprite: Phaser.GameObjects.Sprite;
-  owner:  PillOwner;
-  health: number;
-  alive   = true;
+  owner:   PillOwner;
+  health:  number;
+  alive    = true;
+  /** Raw playerId of the current owner; null = neutral. Used by host AI to
+   *  filter same-team targets. Mirrors PillboxState.ownerId from the server. */
+  ownerId: string | null = null;
 
   private facing   = 0;
   private cooldown = 0;
@@ -120,7 +125,7 @@ export class Pillbox {
     bullets: BulletManager | null,
     onShot?: (x: number, y: number, angleDeg: number) => void,
   ) {
-    if (!this.alive || this.owner === 'friendly') return;
+    if (!this.alive) return;
 
     this.cooldown = Math.max(0, this.cooldown - delta);
 
@@ -174,9 +179,10 @@ export class PillboxManager {
     }
   }
 
-  addPill(tileX: number, tileY: number): Pillbox {
+  addPill(tileX: number, tileY: number, ownerId: string | null = null): Pillbox {
     const info: PillInfo = { x: tileX, y: tileY, owner: 0x00, armour: 15, speed: 4 };
     const pill = new Pillbox(this.scene, info, 'friendly', this.group);
+    pill.ownerId = ownerId;
     this.pills.push(pill);
     return pill;
   }
@@ -188,19 +194,30 @@ export class PillboxManager {
   }
 
   /**
-   * @param targets  Passed through to each pill's AI (picks nearest visible).
-   * @param bullets  BulletManager, or `null` for rotation-only.
-   * @param onShot   Called per-shot: (pillIndex, x, y, angleDeg).
+   * @param targets     Passed to each pill's AI (picks nearest visible).
+   * @param bullets     BulletManager, or `null` for rotation-only.
+   * @param onShot      Called per-shot: (pillIndex, x, y, angleDeg).
+   * @param isTeammate  Optional callback; if provided, targets where
+   *                    `isTeammate(pill.ownerId, target.playerId)` is true are
+   *                    excluded from that pill's AI (friendly-fire prevention).
    */
   update(
     delta: number,
     targets: PillTarget[],
     bullets: BulletManager | null,
     onShot?: (pillIndex: number, x: number, y: number, angleDeg: number) => void,
+    isTeammate?: (pillOwnerId: string | null, targetPlayerId: string | undefined) => boolean,
   ) {
     for (let i = 0; i < this.pills.length; i++) {
-      this.pills[i].update(
-        delta, targets, bullets,
+      const pill = this.pills[i];
+      // Without a team-filter callback (single-player, non-host rotation pass),
+      // preserve the original behaviour: friendly pills are inert.
+      if (!isTeammate && pill.owner === 'friendly') continue;
+      const pillTargets = isTeammate
+        ? targets.filter(t => !isTeammate(pill.ownerId, t.playerId))
+        : targets;
+      pill.update(
+        delta, pillTargets, bullets,
         onShot ? (x, y, ang) => onShot(i, x, y, ang) : undefined,
       );
     }

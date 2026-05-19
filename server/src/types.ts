@@ -57,6 +57,8 @@ export interface PillboxState {
   ownerId:  string | null;       // null = neutral
   health:   number;              // 0–4
   alive:    boolean;
+  tileX?:   number;              // set for player-placed pillboxes; undefined for map pillboxes
+  tileY?:   number;
 }
 
 export interface BaseState {

@@ -1,6 +1,7 @@
 import type { MapData, PillInfo, BaseInfo, StartInfo } from './MapData';
 import { DisplayTile, MAP_SIZE } from './TileTypes';
 import { diamondSquare } from './Noise';
+import { mulberry32 } from '../util/Rng';
 
 // ─── Public seed (readable by Settings panel) ────────────────────────────────
 export let CURRENT_SEED = 0;
@@ -26,17 +27,9 @@ const PLAY_MIN = 16;
 const PLAY_MAX = MAP_SIZE - 17; // = 239
 
 // ─── Seeded PRNG (shared across generation, reset from CURRENT_SEED) ─────────
-let _rng = 0;
-function seedRng(s: number) { _rng = s >>> 0; }
-
-// Mulberry32 — same algorithm as Noise.ts for consistency
-function rng(): number {
-  _rng += 0x6d2b79f5;
-  let t = _rng;
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 0x100000000;
-}
+let _rng: () => number = mulberry32(0);
+function seedRng(s: number) { _rng = mulberry32(s); }
+function rng(): number { return _rng(); }
 
 function rngRange(lo: number, hi: number) { return lo + rng() * (hi - lo); }
 function rngInt(lo: number, hi: number)   { return Math.floor(rngRange(lo, hi + 1)); }

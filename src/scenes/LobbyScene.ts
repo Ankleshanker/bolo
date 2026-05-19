@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { STORAGE_NAME, STORAGE_COLOR } from '../ui/SettingsPanel';
 import { networkManager } from '../network/NetworkManager';
+import type { NetEvents } from '../network/NetworkManager';
 import type { RoomSettings, RoomSummary, PlayerInfo, S2C_GameStart } from '../network/types.ts';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -108,6 +109,7 @@ export class LobbyScene extends Phaser.Scene {
   private refreshTimer?: Phaser.Time.TimerEvent;
   private wheelHandler?: (...args: unknown[]) => void;
   private keydownHandler?: (e: KeyboardEvent) => void;
+  private _netHandlers: Array<{ event: string; fn: (...args: unknown[]) => void }> = [];
 
   // ── tab refs (rebuilt on resize) ──────────────────────────────────────────
   private soloTab!:    Phaser.GameObjects.Rectangle;
@@ -134,6 +136,7 @@ export class LobbyScene extends Phaser.Scene {
     this.mpPlayers = [];
     this.dynamicObjs   = [];
     this.permanentObjs = [];
+    this._netHandlers  = [];
     this.createSettings.seed = this.seed;
 
     // Read ?room= query param for direct-join links
@@ -167,7 +170,7 @@ export class LobbyScene extends Phaser.Scene {
     window.addEventListener('keydown', this.keydownHandler);
 
     // ── NetworkManager listeners ──────────────────────────────────────────
-    networkManager.on('roomList', d => {
+    this._addNetHandler('roomList', d => {
       this.roomList = d.rooms;
       if (this.pendingAutoJoinCode) {
         const code = this.pendingAutoJoinCode;
@@ -178,49 +181,49 @@ export class LobbyScene extends Phaser.Scene {
       if (this.mode === 'multi' && this.view === 'browse') this._renderMultiBrowse();
     });
 
-    networkManager.on('roomJoined', d => {
+    this._addNetHandler('roomJoined', d => {
       this.view      = 'room';
       this.mpPlayers = d.players;
       if (this.mode === 'multi') this._renderRoom();
     });
 
-    networkManager.on('playerJoined', d => {
+    this._addNetHandler('playerJoined', d => {
       this.mpPlayers = this.mpPlayers.filter(p => p.playerId !== d.player.playerId);
       this.mpPlayers.push(d.player);
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('playerRemoved', d => {
+    this._addNetHandler('playerRemoved', d => {
       this.mpPlayers = this.mpPlayers.filter(p => p.playerId !== d.playerId);
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('playerGhosted', d => {
+    this._addNetHandler('playerGhosted', d => {
       const p = this.mpPlayers.find(pp => pp.playerId === d.playerId);
       if (p) p.connected = false;
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('playerReconnected', d => {
+    this._addNetHandler('playerReconnected', d => {
       const idx = this.mpPlayers.findIndex(p => p.playerId === d.playerId);
       if (idx >= 0) this.mpPlayers[idx] = d.player; else this.mpPlayers.push(d.player);
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('settingsUpdated', d => {
+    this._addNetHandler('settingsUpdated', d => {
       networkManager.settings = d.settings;
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('hostChanged', () => {
+    this._addNetHandler('hostChanged', () => {
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('error', d => {
+    this._addNetHandler('error', d => {
       console.warn('[lobby error]', d.message);
     });
 
-    networkManager.on('gameStart', (d: S2C_GameStart) => {
+    this._addNetHandler('gameStart', (d: S2C_GameStart) => {
       this._cleanupListeners();
       this.scene.start('GameScene', {
         multiplayerMode: true,
@@ -1165,6 +1168,14 @@ export class LobbyScene extends Phaser.Scene {
 
   // ─── Utilities ────────────────────────────────────────────────────────────
 
+  private _addNetHandler<K extends keyof NetEvents>(
+    event: K,
+    fn: (data: NetEvents[K]) => void,
+  ): void {
+    networkManager.on(event, fn);
+    this._netHandlers.push({ event: event as string, fn: fn as (...args: unknown[]) => void });
+  }
+
   private _truncate(s: string, n: number): string {
     return s.length > n ? s.slice(0, n) + '…' : s;
   }
@@ -1181,15 +1192,12 @@ export class LobbyScene extends Phaser.Scene {
       window.removeEventListener('keydown', this.keydownHandler);
       this.keydownHandler = undefined;
     }
-    networkManager.off('roomList',          () => {});
-    networkManager.off('roomJoined',        () => {});
-    networkManager.off('playerJoined',      () => {});
-    networkManager.off('playerRemoved',     () => {});
-    networkManager.off('playerGhosted',     () => {});
-    networkManager.off('playerReconnected', () => {});
-    networkManager.off('settingsUpdated',   () => {});
-    networkManager.off('hostChanged',       () => {});
-    networkManager.off('error',             () => {});
-    networkManager.off('gameStart',         () => {});
+    for (const { event, fn } of this._netHandlers) {
+      networkManager.off(
+        event as keyof NetEvents,
+        fn as (data: NetEvents[keyof NetEvents]) => void,
+      );
+    }
+    this._netHandlers = [];
   }
 }

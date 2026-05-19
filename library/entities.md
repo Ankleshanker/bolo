@@ -108,17 +108,22 @@ getGhostVelocity(sprite): { vx: number; vy: number }         // approximate velo
 |---|---|---|
 | `'neutral'` | Yes | Uncaptured |
 | `'enemy'` | Yes | Owned by another team |
-| `'friendly'` | No | Owned by local player's team |
+| `'friendly'` | SP: No. MP: Yes, at enemies | Owned by local player's team |
 
-In multiplayer, team-awareness comes from `networkManager.isMyTeam(ownerId)` — the server broadcasts owner by `playerId`.
+`owner` is the **display-relative** string used for texture and SP shooting logic.  
+`ownerId: string | null` is the **raw playerId** of the current owner (null = neutral). This is what the host uses for team-aware AI filtering in MP and what `PillboxState` stores on the server.
+
+In multiplayer, `owner` is derived from `networkManager.isMyTeam(ownerId)` whenever a `pillboxUpdate` or snapshot is applied.
 
 ### AI (per frame)
 
 - Range: `SHOOT_RANGE_PX = 320`
-- Accepts `targets: PillTarget[]`; picks the nearest visible (non-hidden) target in range
+- Accepts `targets: PillTarget[]` (`{ x, y, hidden?, playerId? }`); picks the nearest visible (non-hidden) target in range
+- `playerId` on each target is used by `PillboxManager.update()` to filter same-team targets before passing the list to each pill
 - Tracks target, snaps barrel to nearest 22.5°
 - Fire cooldown lerps: `COOLDOWN_CRIT (400ms)` at 1 HP → `COOLDOWN_FULL (1500ms)` at full health
 - Pass `bullets = null` for rotation-only mode (non-host clients in MP)
+- **Friendly-pill inertness rule:** without an `isTeammate` callback (SP and non-host rotation), `PillboxManager.update()` skips pills with `owner === 'friendly'` entirely. With an `isTeammate` callback (MP host), the skip is removed and the per-pill target filter governs who gets shot.
 
 ### Health & damage
 
@@ -150,21 +155,32 @@ Immovable circle: radius 12, offset (4, 4). Blocks tank and builder soldier.
 5. All clients destroy the pickup sprite on receipt; the winner (`collectorId`) sets `tank.pillsCarried = 1`
 6. Late joiners receive active pickups via `WorldSnapshot.pillPickups[]`
 
+**Multiplayer — placement:**
+1. Builder soldier arrives at tile → `addPill(tileX, tileY, networkManager.playerId)` creates the pill locally
+2. Placer sends `pillboxUpdate { index, ownerId, health:4, alive:true, tileX, tileY }` — **position fields are required** for remote creation
+3. Other clients receive `pillboxUpdate`; if `pills[index]` doesn't exist and position fields are present, they call `addPill()` to create the sprite
+4. Late joiners receive the pill via `WorldSnapshot.pillboxStates[]` (which also carries `tileX`/`tileY`) and the same create-if-missing logic runs in `applySnapshot()`
+
 `GameScene.pillPickups` is typed `{ sprite: Phaser.GameObjects.Sprite; id: string }[]`. In SP the `id` is `''`.  
 `GameScene.pendingPillCollects: Set<string>` prevents sending duplicate collect events while standing on a tile.
 
-### Key methods (multiplayer)
+### Key methods
 
-- `setFacing(angleDeg)` — rotates the sprite to the given angle; used by non-host clients when receiving `pillboxFire` events
-- `fireAt(angleDeg, bullets)` — fires a bullet from the barrel tip at the given angle; used by non-host clients to replicate host-authoritative shots
+- `addPill(tileX, tileY, ownerId?)` — creates a new friendly pillbox, sets `pill.ownerId`
+- `setFacing(angleDeg)` — rotates the sprite to the given angle
+- `fireAt(angleDeg, bullets)` — fires a bullet from the barrel tip at the given angle
 
 ### Multiplayer sync
 
 - When a pillbox is damaged/destroyed by the local player: `networkManager.sendPillboxUpdate(idx, ownerId, health, alive)` + `networkManager.sendPillPickupSpawned(id, x, y)`
-- When received: `pill.capture(owner)` sets texture + stops shooting; `pill.health = d.health`
-- On `setupMultiplayer()`: the **host** pre-broadcasts all pills as neutral to seed the server snapshot (prevents false domination win)
-- Non-host clients receive `pillboxFire { pillIndex, angleDeg }` and call `pill.setFacing()` + `pill.fireAt()` to replicate the bullet locally
+- When a player **places** a new pillbox: `sendPillboxUpdate(idx, ownerId, 4, true, tileX, tileY)` — tileX/tileY enable remote creation
+- When received: `pill.ownerId` is synced; `pill.capture(owner)` sets texture; `pill.health = d.health`
+- On `setupMultiplayer()`: the **host** pre-broadcasts all map pills as neutral to seed the server snapshot (prevents false domination win)
+- **Host** runs full AI each frame and broadcasts `pillboxBulletFired { pillIndex, x, y, angleDeg }` for every shot; non-hosts fire the bullet locally from the broadcast coordinates
+- The host's `pillboxes.update()` call passes an `isTeammate` callback so each pill's target list is pre-filtered to exclude same-team players (`networkManager.sameTeam(pill.ownerId, target.playerId)`)
 - Pickup collection is server-authoritative via `pillPickupSpawned` / `pillPickupCollected` events (see Capture flow above)
+
+**Known limitation:** If two players simultaneously hold pill pickups and place pillboxes at the same time, their locally-assigned array indices may collide (both = `mapPills.length`). The server's next full snapshot will re-sync state, but the brief window can cause mis-attribution of ownership. This is rare because pickup collection is first-come-first-served.
 
 ---
 

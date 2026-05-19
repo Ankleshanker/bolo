@@ -262,8 +262,10 @@ export class NetworkManager {
     this.socket?.emit('tileChanged', { tileX, tileY, displayTile });
   }
 
-  sendPillboxUpdate(index: number, ownerId: string | null, health: number, alive: boolean): void {
-    this.socket?.emit('pillboxUpdate', { index, ownerId, health, alive });
+  sendPillboxUpdate(index: number, ownerId: string | null, health: number, alive: boolean, tileX?: number, tileY?: number): void {
+    const payload: Record<string, unknown> = { index, ownerId, health, alive };
+    if (tileX !== undefined) { payload.tileX = tileX; payload.tileY = tileY; }
+    this.socket?.emit('pillboxUpdate', payload);
   }
 
   sendBaseUpdate(index: number, ownerId: string | null, health: number, shells: number, mines: number): void {
@@ -334,6 +336,20 @@ export class NetworkManager {
     const other = this.players.get(playerId);
     if (!other) return false;
     return other.teamIndex === this.myTeamIndex;
+  }
+
+  /**
+   * Returns true if playerA and playerB are on the same team.
+   * Unlike `isMyTeam`, this is not relative to the local player — it compares
+   * two arbitrary player IDs. Used by host pillbox AI to filter friendly targets.
+   */
+  sameTeam(playerA: string | null, playerB: string | null | undefined): boolean {
+    if (!playerA || !playerB) return false;
+    if (!this.settings || this.settings.teamMode === 'ffa') return playerA === playerB;
+    const a = this.players.get(playerA);
+    const b = this.players.get(playerB);
+    if (!a || !b) return false;
+    return a.teamIndex === b.teamIndex;
   }
 
   getPlayerColor(playerId: string): number {

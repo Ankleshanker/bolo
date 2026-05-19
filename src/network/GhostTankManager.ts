@@ -350,17 +350,19 @@ export class GhostTankManager {
   /**
    * Returns interpolated positions of all alive, non-ghosted ghosts.
    * Used by the host to build the pillbox target list each frame.
+   * `playerId` is included so the host can filter same-team targets per pill.
    */
-  getAlivePillTargets(): { x: number; y: number; hidden: boolean }[] {
-    const out: { x: number; y: number; hidden: boolean }[] = [];
-    for (const ghost of this.ghosts.values()) {
+  getAlivePillTargets(): { x: number; y: number; hidden: boolean; playerId: string }[] {
+    const out: { x: number; y: number; hidden: boolean; playerId: string }[] = [];
+    for (const [playerId, ghost] of this.ghosts) {
       if (ghost.ghosted) continue;
       const newest = ghost.snapshots[ghost.snapshots.length - 1];
       if (!newest?.alive) continue;
       out.push({
-        x:      ghost.interpolated.x,
-        y:      ghost.interpolated.y,
-        hidden: newest.inForest,
+        x:        ghost.interpolated.x,
+        y:        ghost.interpolated.y,
+        hidden:   newest.inForest,
+        playerId,
       });
     }
     return out;
