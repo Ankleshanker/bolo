@@ -5,7 +5,7 @@ export interface RoomSettings { mapType: 'procedural'|'bmap'; mapName: string; s
 export interface PlayerInfo { playerId: string; name: string; color: string; teamIndex: number; connected: boolean; disconnectedAt?: number; kills: number; deaths: number; }
 export interface RoomSummary { roomId: string; code: string; name: string; hostName: string; playerCount: number; maxPlayers: number; state: RoomState; settings: RoomSettings; timeRemainingMs: number; }
 export interface TileDiff { tileX: number; tileY: number; displayTile: number; }
-export interface PillboxState { index: number; ownerId: string|null; health: number; alive: boolean; }
+export interface PillboxState { index: number; ownerId: string|null; health: number; alive: boolean; tileX?: number; tileY?: number; }
 export interface BaseState { index: number; ownerId: string|null; health: number; shells: number; mines: number; }
 export interface MineState { tileX: number; tileY: number; ownerPlayerId: string; }
 export interface BoatState { tileX: number; tileY: number; }

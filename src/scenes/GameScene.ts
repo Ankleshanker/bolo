@@ -286,15 +286,19 @@ export class GameScene extends Phaser.Scene {
 
     if (this.multiplayerMode) {
       if (networkManager.isHost) {
-        // Host is authoritative: build target list from ALL alive players and run AI
-        const pillTargets: { x: number; y: number; hidden: boolean }[] = [];
-        if (!this.dead) pillTargets.push({ x: this.tank.x, y: this.tank.y, hidden: inForest });
+        // Host is authoritative: build target list from ALL alive players and run AI.
+        // Each target includes playerId so team-owned pills can skip friendly targets.
+        const pillTargets: { x: number; y: number; hidden: boolean; playerId: string }[] = [];
+        if (!this.dead) pillTargets.push({ x: this.tank.x, y: this.tank.y, hidden: inForest, playerId: networkManager.playerId });
         for (const t of (this.ghostManager?.getAlivePillTargets() ?? [])) pillTargets.push(t);
         this.pillboxes.update(delta, pillTargets, this.pillboxBullets,
           (pillIdx, px, py, ang) => {
             this.soundManager.playPillboxFire(this.soundDist(px, py));
             networkManager.sendPillboxBulletFired(pillIdx, px, py, ang);
-          });
+          },
+          // Phase 2: exclude same-team players from each pill's target list
+          (pillOwnerId, targetPlayerId) => networkManager.sameTeam(pillOwnerId, targetPlayerId ?? null),
+        );
       } else {
         // Non-host: run AI for visual rotation only (no bullets — host broadcasts shots)
         this.pillboxes.update(delta,
@@ -463,8 +467,16 @@ export class GameScene extends Phaser.Scene {
     });
 
     this._addNetHandler('pillboxUpdate', (d) => {
-      const pill = this.pillboxes.pills[d.index];
+      let pill = this.pillboxes.pills[d.index];
+      // Phase 1 fix: player-placed pills arrive via pillboxUpdate with position data.
+      // Create the sprite locally if we haven't seen this index before.
+      if (!pill && d.alive && d.tileX != null && d.tileY != null) {
+        pill = this.pillboxes.addPill(d.tileX, d.tileY, d.ownerId);
+        if (!networkManager.isHost) this.chyron.push('A pillbox was placed.');
+      }
       if (!pill) return;
+      // Always keep ownerId in sync for team-aware AI (host) and display (all clients)
+      pill.ownerId = d.ownerId;
       if (!d.alive) {
         if (pill.alive) pill.takeDamage(pill.health); // kill it
         if (!networkManager.isHost) this.chyron.push('A pillbox was destroyed.');
@@ -625,7 +637,7 @@ export class GameScene extends Phaser.Scene {
     // ── Pillbox fire relay (non-host: apply angle + fire locally) ────────────
     this._addNetHandler('pillboxFire', (d) => {
       const pill = this.pillboxes.pills[d.pillIndex];
-      if (!pill || !pill.alive || pill.owner === 'friendly') return;
+      if (!pill || !pill.alive) return;
       pill.setFacing(d.angleDeg);
       pill.fireAt(d.angleDeg, this.pillboxBullets);
       this.soundManager.playPillboxFire(this.soundDist(pill.x, pill.y));
@@ -656,9 +668,14 @@ export class GameScene extends Phaser.Scene {
     }
     // Sync pillbox states
     for (const ps of snap.pillboxStates) {
-      const pill = this.pillboxes.pills[ps.index];
+      let pill = this.pillboxes.pills[ps.index];
+      // Late-joiner path: create player-placed pills that aren't in the initial map
+      if (!pill && ps.alive && ps.tileX != null && ps.tileY != null) {
+        pill = this.pillboxes.addPill(ps.tileX, ps.tileY, ps.ownerId);
+      }
       if (!pill) continue;
       const net = networkManager;
+      pill.ownerId = ps.ownerId;
       if (!ps.alive) {
         if (pill.alive) pill.takeDamage(pill.health);
       } else {
@@ -1420,10 +1437,11 @@ export class GameScene extends Phaser.Scene {
         t.trees -= COST_PILLBOX;
         t.pillsCarried = 0;
         this.dispatchSoldier(tileX, tileY, () => {
-          const pill = this.pillboxes.addPill(tileX, tileY);
+          const pill = this.pillboxes.addPill(tileX, tileY, networkManager.playerId);
           if (this.multiplayerMode) {
             const idx = this.pillboxes.pills.indexOf(pill);
-            networkManager.sendPillboxUpdate(idx, networkManager.playerId, 4, true);
+            // Include tileX/tileY so other clients can create the sprite at this position
+            networkManager.sendPillboxUpdate(idx, networkManager.playerId, 4, true, tileX, tileY);
           }
         });
         break;
