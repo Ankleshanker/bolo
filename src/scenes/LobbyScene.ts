@@ -76,6 +76,7 @@ export class LobbyScene extends Phaser.Scene {
   // ── dynamic containers ────────────────────────────────────────────────────
   private dynamicObjs: Phaser.GameObjects.GameObject[] = [];
   private keydownHandler?: (e: KeyboardEvent) => void;
+  private _netHandlers: Array<{ event: string; fn: (...args: unknown[]) => void }> = [];
 
   // ── layout helpers ────────────────────────────────────────────────────────
   private W  = 0;
@@ -95,6 +96,7 @@ export class LobbyScene extends Phaser.Scene {
     this.roomList  = [];
     this.mpPlayers = [];
     this.dynamicObjs = [];
+    this._netHandlers = [];
     this.createSettings.seed = this.seed;
 
     // ── Background (permanent) ────────────────────────────────────────────
@@ -135,54 +137,54 @@ export class LobbyScene extends Phaser.Scene {
     window.addEventListener('keydown', this.keydownHandler);
 
     // ── NetworkManager listeners ──────────────────────────────────────────
-    networkManager.on('roomList', d => {
+    this._addNetHandler('roomList', d => {
       this.roomList = d.rooms;
       if (this.mode === 'multi' && this.view === 'browse') this._renderMultiBrowse();
     });
 
-    networkManager.on('roomJoined', d => {
+    this._addNetHandler('roomJoined', d => {
       this.view      = 'room';
       this.mpPlayers = d.players;
       if (this.mode === 'multi') this._renderRoom();
     });
 
-    networkManager.on('playerJoined', d => {
+    this._addNetHandler('playerJoined', d => {
       this.mpPlayers = this.mpPlayers.filter(p => p.playerId !== d.player.playerId);
       this.mpPlayers.push(d.player);
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('playerRemoved', d => {
+    this._addNetHandler('playerRemoved', d => {
       this.mpPlayers = this.mpPlayers.filter(p => p.playerId !== d.playerId);
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('playerGhosted', d => {
+    this._addNetHandler('playerGhosted', d => {
       const p = this.mpPlayers.find(pp => pp.playerId === d.playerId);
       if (p) p.connected = false;
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('playerReconnected', d => {
+    this._addNetHandler('playerReconnected', d => {
       const idx = this.mpPlayers.findIndex(p => p.playerId === d.playerId);
       if (idx >= 0) this.mpPlayers[idx] = d.player; else this.mpPlayers.push(d.player);
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('settingsUpdated', d => {
+    this._addNetHandler('settingsUpdated', d => {
       networkManager.settings = d.settings;
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('hostChanged', () => {
+    this._addNetHandler('hostChanged', () => {
       if (this.view === 'room') this._renderRoom();
     });
 
-    networkManager.on('error', d => {
+    this._addNetHandler('error', d => {
       console.warn('[lobby error]', d.message);
     });
 
-    networkManager.on('gameStart', (d: S2C_GameStart) => {
+    this._addNetHandler('gameStart', (d: S2C_GameStart) => {
       this._cleanupListeners();
       this.scene.start('GameScene', {
         multiplayerMode: true,
@@ -515,160 +517,187 @@ export class LobbyScene extends Phaser.Scene {
     this._clearDynamic();
     const { cx, H } = this;
     const topY = H * 0.34;
+    const rowH = 30;
 
     this._push(this.add.text(cx, topY - 10, 'CREATE ROOM', { fontSize: '15px', color: C.textDim, letterSpacing: 3 }).setOrigin(0.5));
 
-    // Room name input
-    this._push(this.add.text(cx - 150, topY + 20, 'Room name:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
-    const nameBox = this._push(this.add.rectangle(cx + 40, topY + 20, 220, 26, 0x08121e)
+    let gy = topY + 20;
+    gy = this._buildCreateNameInput(gy);
+    gy += 35; // gap between name row and first settings row (matches original topY + 55)
+    gy = this._buildCreateMapSection(gy, rowH);
+    gy = this._buildCreateTeamMode(gy, rowH);
+    gy = this._buildCreateWinCondition(gy, rowH);
+    gy = this._buildCreateToggles(gy, rowH);
+    gy = this._buildCreatePlayerCount(gy, rowH);
+    gy = this._buildCreateGameLength(gy, rowH);
+    this._buildCreateButtons(gy);
+  }
+
+  private _buildCreateNameInput(y: number): number {
+    const { cx } = this;
+    this._push(this.add.text(cx - 150, y, 'Room name:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    const nameBox = this._push(this.add.rectangle(cx + 40, y, 220, 26, 0x08121e)
       .setStrokeStyle(1, this.nameInputFocused ? C.border : 0x2244aa)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.nameInputFocused = true; this._renderCreate(); })
     );
     void nameBox;
-    this._push(this.add.text(cx + 40, topY + 20,
+    this._push(this.add.text(cx + 40, y,
       (this.roomNameInput || 'My Room') + (this.nameInputFocused ? '|' : ''),
       { fontSize: '14px', color: this.roomNameInput ? C.white : '#334455' }).setOrigin(0.5));
+    return y;
+  }
 
-    let gy = topY + 55;
-    const rowH = 30;
-
-    // Map type toggle
-    this._push(this.add.text(cx - 150, gy, 'Map:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
-    const mapProcBtn = this._push(this.add.rectangle(cx + 10, gy, 80, 22,
+  private _buildCreateMapSection(y: number, rowH: number): number {
+    const { cx } = this;
+    this._push(this.add.text(cx - 150, y, 'Map:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    const mapProcBtn = this._push(this.add.rectangle(cx + 10, y, 80, 22,
       this.createSettings.mapType === 'procedural' ? C.panelHi : C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.createSettings.mapType = 'procedural'; this._renderCreate(); })
     );
-    this._push(this.add.text(cx + 10, gy, 'Procedural', { fontSize: '13px', color: C.text }).setOrigin(0.5));
-    const mapBmapBtn = this._push(this.add.rectangle(cx + 100, gy, 80, 22,
+    this._push(this.add.text(cx + 10, y, 'Procedural', { fontSize: '13px', color: C.text }).setOrigin(0.5));
+    const mapBmapBtn = this._push(this.add.rectangle(cx + 100, y, 80, 22,
       this.createSettings.mapType === 'bmap' ? C.panelHi : C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: this.hasMap })
       .on('pointerdown', () => { if (this.hasMap) { this.createSettings.mapType = 'bmap'; this._renderCreate(); } })
     );
-    this._push(this.add.text(cx + 100, gy, 'Map file', { fontSize: '13px', color: this.hasMap ? C.text : C.textDim }).setOrigin(0.5));
+    this._push(this.add.text(cx + 100, y, 'Map file', { fontSize: '13px', color: this.hasMap ? C.text : C.textDim }).setOrigin(0.5));
     void mapProcBtn; void mapBmapBtn;
 
     if (this.createSettings.mapType === 'bmap') {
       const fname = this.uploadedMapName ?? 'No file chosen';
-      gy += rowH;
-      this._push(this.add.text(cx - 150, gy, 'Map file:', { fontSize: '15px', color: C.textDim }).setOrigin(0, 0.5));
-      const fpBtn = this._push(this.add.rectangle(cx + 30, gy, 160, 22, 0x0a1a0a)
+      y += rowH;
+      this._push(this.add.text(cx - 150, y, 'Map file:', { fontSize: '15px', color: C.textDim }).setOrigin(0, 0.5));
+      const fpBtn = this._push(this.add.rectangle(cx + 30, y, 160, 22, 0x0a1a0a)
         .setStrokeStyle(1, 0x336633).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => this._triggerMapUpload())
       );
-      this._push(this.add.text(cx + 30, gy, fname.length > 20 ? fname.slice(0, 18) + '…' : fname, {
+      this._push(this.add.text(cx + 30, y, fname.length > 20 ? fname.slice(0, 18) + '…' : fname, {
         fontSize: '13px', color: fname === 'No file chosen' ? '#334455' : '#88ffaa',
       }).setOrigin(0.5));
       void fpBtn;
     }
-    gy += rowH;
+    return y + rowH;
+  }
 
-    // Team mode
-    this._push(this.add.text(cx - 150, gy, 'Teams:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+  private _buildCreateTeamMode(y: number, rowH: number): number {
+    const { cx } = this;
+    this._push(this.add.text(cx - 150, y, 'Teams:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const teamModes: Array<RoomSettings['teamMode']> = ['ffa', '2team', '4team'];
     let bx = cx - 60;
     for (const tm of teamModes) {
       const active = this.createSettings.teamMode === tm;
-      const btn = this._push(this.add.rectangle(bx, gy, 80, 22, active ? C.panelHi : C.panel)
+      const btn = this._push(this.add.rectangle(bx, y, 80, 22, active ? C.panelHi : C.panel)
         .setStrokeStyle(1, active ? C.border : C.borderDim).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => { this.createSettings.teamMode = tm; this._renderCreate(); })
       );
-      this._push(this.add.text(bx, gy, TEAM_MODE_LABELS[tm], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
+      this._push(this.add.text(bx, y, TEAM_MODE_LABELS[tm], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
       void btn;
       bx += 84;
     }
-    gy += rowH;
+    return y + rowH;
+  }
 
-    // Win condition
-    this._push(this.add.text(cx - 150, gy, 'Win:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+  private _buildCreateWinCondition(y: number, rowH: number): number {
+    const { cx } = this;
+    this._push(this.add.text(cx - 150, y, 'Win:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const winConds: Array<RoomSettings['winCondition']> = ['timer', 'domination', 'deathmatch'];
-    bx = cx - 60;
+    let bx = cx - 60;
     for (const wc of winConds) {
       const active = this.createSettings.winCondition === wc;
-      const btn = this._push(this.add.rectangle(bx, gy, 80, 22, active ? C.panelHi : C.panel)
+      const btn = this._push(this.add.rectangle(bx, y, 80, 22, active ? C.panelHi : C.panel)
         .setStrokeStyle(1, active ? C.border : C.borderDim).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => { this.createSettings.winCondition = wc; this._renderCreate(); })
       );
-      this._push(this.add.text(bx, gy, WIN_COND_LABELS[wc].split(' ')[0], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
+      this._push(this.add.text(bx, y, WIN_COND_LABELS[wc].split(' ')[0], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
       void btn;
       bx += 84;
     }
-    gy += rowH;
+    return y + rowH;
+  }
+
+  private _buildCreateToggles(y: number, rowH: number): number {
+    const { cx } = this;
 
     // Friendly fire
-    this._push(this.add.text(cx - 150, gy, 'Friendly Fire:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    this._push(this.add.text(cx - 150, y, 'Friendly Fire:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const ffActive = this.createSettings.friendlyFire;
-    const ffBtn = this._push(this.add.rectangle(cx + 10, gy, 60, 22, ffActive ? 0x3a1010 : C.panel)
+    const ffBtn = this._push(this.add.rectangle(cx + 10, y, 60, 22, ffActive ? 0x3a1010 : C.panel)
       .setStrokeStyle(1, ffActive ? C.red : C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.createSettings.friendlyFire = !this.createSettings.friendlyFire; this._renderCreate(); })
     );
-    this._push(this.add.text(cx + 10, gy, ffActive ? 'ON' : 'OFF', { fontSize: '13px', color: ffActive ? '#ff6666' : C.textGrey }).setOrigin(0.5));
+    this._push(this.add.text(cx + 10, y, ffActive ? 'ON' : 'OFF', { fontSize: '13px', color: ffActive ? '#ff6666' : C.textGrey }).setOrigin(0.5));
     void ffBtn;
-    gy += rowH;
+    y += rowH;
 
     // Public/Private
-    this._push(this.add.text(cx - 150, gy, 'Visibility:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    this._push(this.add.text(cx - 150, y, 'Visibility:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const pubActive = this.createSettings.isPublic;
-    const pubBtn = this._push(this.add.rectangle(cx + 10, gy, 70, 22, pubActive ? C.panelHi : C.panel)
+    const pubBtn = this._push(this.add.rectangle(cx + 10, y, 70, 22, pubActive ? C.panelHi : C.panel)
       .setStrokeStyle(1, pubActive ? C.border : C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.createSettings.isPublic = !this.createSettings.isPublic; this._renderCreate(); })
     );
-    this._push(this.add.text(cx + 10, gy, pubActive ? '🔓 Public' : '🔒 Private', { fontSize: '13px', color: C.textGrey }).setOrigin(0.5));
+    this._push(this.add.text(cx + 10, y, pubActive ? '🔓 Public' : '🔒 Private', { fontSize: '13px', color: C.textGrey }).setOrigin(0.5));
     void pubBtn;
-    gy += rowH;
+    return y + rowH;
+  }
 
-    // Max players
-    this._push(this.add.text(cx - 150, gy, 'Max players:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
-    const decBtn = this._push(this.add.rectangle(cx - 30, gy, 24, 22, C.panel)
+  private _buildCreatePlayerCount(y: number, rowH: number): number {
+    const { cx } = this;
+    this._push(this.add.text(cx - 150, y, 'Max players:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    const decBtn = this._push(this.add.rectangle(cx - 30, y, 24, 22, C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.createSettings.maxPlayers = Math.max(2, this.createSettings.maxPlayers - 1); this._renderCreate(); })
     );
-    this._push(this.add.text(cx - 30, gy, '−', { fontSize: '16px', color: C.text }).setOrigin(0.5));
-    this._push(this.add.text(cx + 10, gy, String(this.createSettings.maxPlayers), { fontSize: '15px', color: C.white }).setOrigin(0.5));
-    const incBtn = this._push(this.add.rectangle(cx + 50, gy, 24, 22, C.panel)
+    this._push(this.add.text(cx - 30, y, '−', { fontSize: '16px', color: C.text }).setOrigin(0.5));
+    this._push(this.add.text(cx + 10, y, String(this.createSettings.maxPlayers), { fontSize: '15px', color: C.white }).setOrigin(0.5));
+    const incBtn = this._push(this.add.rectangle(cx + 50, y, 24, 22, C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.createSettings.maxPlayers = Math.min(16, this.createSettings.maxPlayers + 1); this._renderCreate(); })
     );
-    this._push(this.add.text(cx + 50, gy, '+', { fontSize: '16px', color: C.text }).setOrigin(0.5));
+    this._push(this.add.text(cx + 50, y, '+', { fontSize: '16px', color: C.text }).setOrigin(0.5));
     void decBtn; void incBtn;
+    return y + rowH;
+  }
 
-    gy += rowH;
-    // Game length
-    this._push(this.add.text(cx - 150, gy, 'Game length:', { fontSize: '15px', color: C.textDim }).setOrigin(0, 0.5));
+  private _buildCreateGameLength(y: number, rowH: number): number {
+    const { cx } = this;
+    this._push(this.add.text(cx - 150, y, 'Game length:', { fontSize: '15px', color: C.textDim }).setOrigin(0, 0.5));
     const durations = [5 * 60, 10 * 60, 20 * 60, 30 * 60];
     const durLabels = ['5 min', '10 min', '20 min', '30 min'];
     let dx = cx - 110;
     for (let di = 0; di < durations.length; di++) {
       const dur = durations[di];
       const active = this.createSettings.timerSeconds === dur;
-      const dBtn = this._push(this.add.rectangle(dx, gy, 60, 22, active ? C.panelHi : C.panel)
+      const dBtn = this._push(this.add.rectangle(dx, y, 60, 22, active ? C.panelHi : C.panel)
         .setStrokeStyle(1, active ? C.border : C.borderDim).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => { this.createSettings.timerSeconds = dur; this._renderCreate(); })
       );
-      this._push(this.add.text(dx, gy, durLabels[di], { fontSize: '13px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
+      this._push(this.add.text(dx, y, durLabels[di], { fontSize: '13px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
       void dBtn;
       dx += 64;
     }
-    gy += rowH + 6;
+    return y + rowH + 6;
+  }
 
-    // CREATE button
-    const createBtn = this._push(this.add.rectangle(cx, gy, 180, 42, C.greenBg)
+  private _buildCreateButtons(y: number): void {
+    const { cx } = this;
+    const createBtn = this._push(this.add.rectangle(cx, y, 180, 42, C.greenBg)
       .setStrokeStyle(2, C.green).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this._createRoom())
       .on('pointerover', () => (createBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.greenHi))
       .on('pointerout',  () => (createBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.greenBg))
     );
-    this._push(this.add.text(cx, gy, '✓  CREATE', { fontSize: '18px', color: '#88ff88', fontStyle: 'bold' }).setOrigin(0.5));
+    this._push(this.add.text(cx, y, '✓  CREATE', { fontSize: '18px', color: '#88ff88', fontStyle: 'bold' }).setOrigin(0.5));
 
-    // Back button
-    const backBtn = this._push(this.add.rectangle(cx, gy + 50, 120, 28, C.panel)
+    const backBtn = this._push(this.add.rectangle(cx, y + 50, 120, 28, C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.view = 'browse'; this.nameInputFocused = false; this._renderMultiBrowse(); })
       .on('pointerover', () => (backBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panelHi))
       .on('pointerout',  () => (backBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panel))
     );
-    this._push(this.add.text(cx, gy + 50, '← Back', { fontSize: '14px', color: C.textGrey }).setOrigin(0.5));
+    this._push(this.add.text(cx, y + 50, '← Back', { fontSize: '14px', color: C.textGrey }).setOrigin(0.5));
   }
 
   private _createRoom() {
@@ -711,24 +740,9 @@ export class LobbyScene extends Phaser.Scene {
 
     let py = listY + 18;
     for (const p of players) {
-      const isMe   = p.playerId === net.playerId;
-      const colVal = parseInt(p.color.replace(/^#/, ''), 16) || 0xffffff;
-      const dot    = this._push(this.add.circle(cx - 130, py + 10, 5, colVal));
-      void dot;
-      this._push(this.add.text(cx - 120, py + 10,
-        `${p.name}${isMe ? ' (you)' : ''}${!p.connected ? ' (DC)' : ''}`,
-        { fontSize: '14px', color: p.connected ? C.text : C.textDim }).setOrigin(0, 0.5));
-
-      // Kick button (host only, not self)
-      if (isHost && p.playerId !== net.playerId) {
-        const kickBtn = this._push(this.add.rectangle(cx + 140, py + 10, 40, 18, 0x2a0808)
-          .setStrokeStyle(1, 0x662222).setInteractive({ useHandCursor: true })
-          .on('pointerdown', () => { networkManager.kickPlayer(p.playerId); })
-          .on('pointerover', () => (kickBtn as Phaser.GameObjects.Rectangle).setFillStyle(0x4a1010))
-          .on('pointerout',  () => (kickBtn as Phaser.GameObjects.Rectangle).setFillStyle(0x2a0808))
-        );
-        this._push(this.add.text(cx + 140, py + 10, 'Kick', { fontSize: '11px', color: '#cc4444' }).setOrigin(0.5));
-      }
+      const isMe    = p.playerId === net.playerId;
+      const canKick = isHost && p.playerId !== net.playerId;
+      this._buildPlayerRow(p, py, isMe, isHost, canKick);
       py += 22;
     }
 
@@ -778,8 +792,36 @@ export class LobbyScene extends Phaser.Scene {
 
   // ─── Utilities ────────────────────────────────────────────────────────────
 
+  private _buildPlayerRow(player: PlayerInfo, y: number, isMe: boolean, _isHost: boolean, canKick: boolean): void {
+    const { cx } = this;
+    const colVal = parseInt(player.color.replace(/^#/, ''), 16) || 0xffffff;
+    const dot    = this._push(this.add.circle(cx - 130, y + 10, 5, colVal));
+    void dot;
+    this._push(this.add.text(cx - 120, y + 10,
+      `${player.name}${isMe ? ' (you)' : ''}${!player.connected ? ' (DC)' : ''}`,
+      { fontSize: '14px', color: player.connected ? C.text : C.textDim }).setOrigin(0, 0.5));
+
+    if (canKick) {
+      const kickBtn = this._push(this.add.rectangle(cx + 140, y + 10, 40, 18, 0x2a0808)
+        .setStrokeStyle(1, 0x662222).setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => { networkManager.kickPlayer(player.playerId); })
+        .on('pointerover', () => (kickBtn as Phaser.GameObjects.Rectangle).setFillStyle(0x4a1010))
+        .on('pointerout',  () => (kickBtn as Phaser.GameObjects.Rectangle).setFillStyle(0x2a0808))
+      );
+      this._push(this.add.text(cx + 140, y + 10, 'Kick', { fontSize: '11px', color: '#cc4444' }).setOrigin(0.5));
+    }
+  }
+
   private _truncate(s: string, n: number): string {
     return s.length > n ? s.slice(0, n) + '…' : s;
+  }
+
+  private _addNetHandler<K extends Parameters<typeof networkManager.on>[0]>(
+    event: K,
+    fn: Parameters<typeof networkManager.on<K>>[1],
+  ): void {
+    networkManager.on(event, fn);
+    this._netHandlers.push({ event, fn: fn as (...args: unknown[]) => void });
   }
 
   private _cleanupListeners() {
@@ -787,16 +829,9 @@ export class LobbyScene extends Phaser.Scene {
       window.removeEventListener('keydown', this.keydownHandler);
       this.keydownHandler = undefined;
     }
-    // Remove NM listeners (re-added on next create())
-    networkManager.off('roomList',        () => {});
-    networkManager.off('roomJoined',      () => {});
-    networkManager.off('playerJoined',    () => {});
-    networkManager.off('playerRemoved',   () => {});
-    networkManager.off('playerGhosted',   () => {});
-    networkManager.off('playerReconnected', () => {});
-    networkManager.off('settingsUpdated', () => {});
-    networkManager.off('hostChanged',     () => {});
-    networkManager.off('error',           () => {});
-    networkManager.off('gameStart',       () => {});
+    for (const { event, fn } of this._netHandlers) {
+      networkManager.off(event as Parameters<typeof networkManager.off>[0], fn as never);
+    }
+    this._netHandlers = [];
   }
 }

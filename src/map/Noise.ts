@@ -1,3 +1,5 @@
+import { mulberry32 } from '../util/Rng';
+
 /**
  * Diamond-Square heightmap generator.
  * Returns a 257×257 Float32Array (row-major, index = y*257 + x) with values in [0, 1].
@@ -7,14 +9,7 @@ export function diamondSquare(seed: number, roughness: number): Float32Array {
   const grid = new Float32Array(SIZE * SIZE);
 
   // Mulberry32 PRNG — deterministic, fast, good distribution
-  let s = seed >>> 0;
-  function prng(): number {
-    s += 0x6d2b79f5;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 0x100000000;
-  }
+  const prng = mulberry32(seed);
 
   function get(x: number, y: number): number {
     // Clamp to edges (no wrap for heightmap borders)
