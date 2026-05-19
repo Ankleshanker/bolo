@@ -57,7 +57,7 @@ When the tank's tile is `DisplayTile.Forest`, GameScene sets `sprite.setAlpha(0.
 
 ## GhostTankManager (`src/network/GhostTankManager.ts`)
 
-Manages up to 15 remote player sprites in multiplayer. Each ghost has a sprite, name label, and health bar.
+Manages up to 15 remote player sprites in multiplayer. Each ghost has a sprite, name label, health bar, and an optional boat sprite.
 
 ### Physics group
 
@@ -72,7 +72,7 @@ Each ghost body is configured in `addGhost()`:
 
 ### Snapshot interpolation
 
-Each ghost keeps a circular buffer of up to 3 `TankState` snapshots. The render position lags 100ms behind the newest snapshot to allow smooth interpolation between two known states. Linear lerp for x/y, shortest-path lerp for angle.
+Each ghost keeps a circular buffer of up to 3 `TankState` snapshots. The render position lags 100ms behind the newest snapshot to allow smooth interpolation between two known states. Linear lerp for x/y/health, shortest-path lerp for angle, midpoint threshold for boolean flags (`inForest`, `inBoat`).
 
 ### Per-frame update
 
@@ -80,13 +80,14 @@ Each ghost keeps a circular buffer of up to 3 `TankState` snapshots. The render 
 - Alpha: 0.65 if `inForest`, 0.35 if `!connected`, 1.0 otherwise
 - Health bar color: green (≥7), yellow (4–6), red (≤3)
 - Name label stays offset above sprite
+- **Boat sprite**: when `inBoat` is true, a `'boat'` sprite (depth 4) is created on demand and positioned at the ghost's interpolated x/y. Hidden when `inBoat` is false, dead, or forest-hidden. Destroyed with the ghost.
 
 ### Key methods
 
 ```typescript
-addGhost(playerId, name, color, teamIndex)                    // create sprite + label + health bar
-removeGhost(playerId)                                         // destroy all objects
-updateSnapshot(state: TankState)                             // push new interpolation frame
+addGhost(playerId, name, color, teamIndex)                    // create sprite + label + health bar + boat sprite slot
+removeGhost(playerId)                                         // destroy all objects including boat sprite
+updateSnapshot(state: TankState)                             // push new interpolation frame (captures inBoat)
 updateSoldier(playerId, x, y, active)                        // show/move/hide remote builder soldier sprite
 setGhosted(playerId, disconnected: boolean)                  // toggle DC visual
 getSpriteByPlayerId(playerId): Sprite | undefined             // for spectator camera follow

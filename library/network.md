@@ -98,7 +98,9 @@ sendPillboxUpdate(idx, ownerId, health, alive)
 sendBaseUpdate(idx, ownerId, health, shells, mines)
 sendMineAdded(tileX, tileY)
 sendMineDetonated(tileX, tileY)
-sendBoatAdded(tileX, tileY)
+sendBoatAdded(tileX, tileY)                   // builder arrives at water tile OR spawn/respawn on water
+sendBoatPickedUp(tileX, tileY)               // tank steps onto a world boat
+sendBoatDropped(tileX, tileY)                // tank exits water, leaving boat at last water tile
 sendSoldierState(x, y, active)               // volatile, 20 Hz — builder position sync
 sendPillboxBulletFired(pillIndex, x, y, ang) // host only — relayed to non-hosts
 sendPillboxFire(pillIndex, angleDeg)         // host only — relayed to non-hosts
@@ -164,7 +166,7 @@ States: `LOBBY → PLAYING → ENDED`
 - `pillboxStates[]` — all known pill states (index, owner, health, alive)
 - `baseStates[]` — all known base states (index, ownerId, health, shells, mines)
 - `mines[]` — all active mines; entries removed on `mineDetonated`
-- `boats[]` — all placed boats; entries pruned when their tile is overwritten via `updateTileChanged()` (a tile mutation means the boat is gone)
+- `boats[]` — all world-resting boats; entries added via `boatAdded`; removed via `boatPickedUp` (boat in transit with a player) or when the tile is overwritten by `updateTileChanged()`. A boat in transit is absent from the snapshot — the recipient reconstructs its visual position from the carrying player's `TankState.inBoat` flag. On `boatDropped`, the boat is re-added at the drop tile.
 - `pillPickups[]` — all uncollected pill pickups `{ id, x, y }`; entries added on `pillPickupSpawned`, removed on `pillPickupCollected`
 - `tankStates[]` — last known tank state per player
 - `timeElapsed` — ms since game start
@@ -196,7 +198,9 @@ States: `LOBBY → PLAYING → ENDED`
 | `baseUpdate` | `{ index, ownerId, health, shells, mines }` | Relayed + stored in snapshot; sent on capture, neutralize, and each MP refuel tick |
 | `mineAdded` | `{ tileX, tileY, ownerPlayerId }` | Relayed + stored in snapshot |
 | `mineDetonated` | `{ tileX, tileY }` | Relayed + snapshot mine removed |
-| `boatAdded` | `{ tileX, tileY }` | Relayed + stored in snapshot |
+| `boatAdded` | `{ tileX, tileY }` | Relayed to others + stored in snapshot. Sent when builder creates a boat OR when local player spawns/respawns on water. |
+| `boatPickedUp` | `{ tileX, tileY }` | Relayed to others; server removes boat from snapshot. Sent when local tank steps onto a world boat. |
+| `boatDropped` | `{ tileX, tileY }` | Relayed to others; server re-adds boat at new tile. Sent when local tank exits water, carrying the boat to a new tile. |
 | `pillPickupSpawned` | `{ id, x, y }` | Destroyer emits; stored in snapshot; relayed to all **others** (destroyer already spawned locally) |
 | `pillPickupCollected` | `{ id }` | Collector candidate; server removes from snapshot if present (first-come), broadcasts `S2C_PillPickupCollected` to room; silently dropped if already gone |
 | `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Host only; server relays to all other clients |
@@ -228,7 +232,10 @@ States: `LOBBY → PLAYING → ENDED`
 | `baseUpdate` | `{ index, ownerId, health, shells, mines }` | |
 | `mineAdded` | `{ tileX, tileY, ownerPlayerId }` | |
 | `mineDetonated` | `{ tileX, tileY }` | |
-| `boatAdded` | `{ tileX, tileY }` | |
+| `boatAdded` | `{ tileX, tileY }` | Sent to all others when builder creates a boat or player spawns on water. |
+| `boatPickedUp` | `{ tileX, tileY }` | Sent to all others when a player picks up a world boat. Recipients destroy the world sprite at that tile; ghost boat rendering takes over via `TankState.inBoat`. |
+| `boatDropped` | `{ tileX, tileY }` | Sent to all others when a player exits water with a boat. Recipients call `ensureBoatAtTile`; ghost boat hidden. |
+| `boatRemoved` | `{ tileX, tileY }` | Sent to all others (not the tile changer) when a tile mutation lands on a boat tile. Recipients destroy the stale world sprite. |
 | `pillPickupSpawned` | `{ id, x, y }` | Relayed to all clients except the destroyer |
 | `pillPickupCollected` | `{ id, collectorId }` | Broadcast to all clients including collector; collector sets `tank.pillsCarried = 1` |
 | `timeUpdate` | `{ remaining: number }` | ms remaining; drives client timer in MP |

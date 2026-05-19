@@ -145,6 +145,23 @@
 
 ---
 
+## Boat carry lifecycle: pickup/drop events + ghost boat sprite — 2026-05-19
+
+**Decision:** Boats have a three-state lifecycle: *world* (static sprite at a tile, listed in snapshot), *carried* (absent from snapshot, visual provided by GhostTankManager), and *dropped* (world again at a new tile). Three events manage transitions:
+- `boatPickedUp { tileX, tileY }` — sender's tank stepped onto a world boat. Server removes it from the snapshot; peers destroy the world sprite at that tile.
+- `boatDropped { tileX, tileY }` — sender exited water; the `tileX/Y` is the last water tile. Server re-adds the boat; peers call `ensureBoatAtTile`.
+- `boatRemoved { tileX, tileY }` — server emits (alongside `tileChanged`) when a tile mutation lands on a boat tile. Peers clean up the stale sprite; the tile changer handles it locally via `setTile → _removeBoatSpriteAt`.
+
+While carried, `TankState.inBoat` is broadcast at 20 Hz. `GhostTankManager` reads this flag and renders a `'boat'` sprite (depth 4) at the ghost's interpolated position. The `_removeBoatSpriteAt` helper guards `activeBoat` — if the local player is carrying the boat, `setTile` will not destroy it even when a `tileChanged` arrives for the same tile.
+
+Spawn and respawn on water tiles now also call `sendBoatAdded` so peers see spawn-point boats.
+
+**Why:** Before this change, boats were purely local world objects — built via builder, never synced beyond initial placement. Peers saw the boat at the original tile forever, with no visual while it was being carried and no update on drop. The `TankState.inBoat` field was being transmitted but ignored on the receiving side.
+**Alternatives rejected:** Embedding `boatTileX/Y` in every `TankState` frame — would require peers to poll for tile changes 20×/s and still wouldn't update the world sprite after drop without the explicit `boatDropped` event. Making GhostTankManager own all boat movement without world-sprite management — leaves stale world sprites visible to peers while the ghost boat also shows, causing visual duplication.
+**Applies to:** `src/network/types.ts`, `server/src/types.ts`, `src/network/NetworkManager.ts`, `src/network/GhostTankManager.ts`, `src/scenes/GameScene.ts`, `server/src/GameRoom.ts`, `server/src/index.ts`.
+
+---
+
 ## Boat snapshot entries pruned on tile change — 2026-05-18
 
 **Decision:** `GameRoom.updateTileChanged()` calls `removeBoatAt(tileX, tileY)` whenever a tile mutation is recorded, evicting any boat at that position from `snapshot.boats`.
