@@ -58,6 +58,39 @@ export class MultiplayerBridge {
     const net = networkManager;
     const ctx = this.ctx;
 
+    // ── Room code label + copy button (above settings gear, uiCam only) ──
+    const scene = this.ctx.scene;
+    const cx        = PANEL_WIDTH / 2;
+    const boxCY     = () => scene.scale.height - 73;
+    const codeBg    = scene.add.rectangle(cx, boxCY(), 90, 50, 0x0d1f33)
+      .setStrokeStyle(1, 0x2244aa).setDepth(21).setScrollFactor(0);
+    const codeLabel = scene.add.text(cx, boxCY() - 14, 'ROOM CODE', {
+      fontSize: '10px', color: '#8899aa', letterSpacing: 1,
+    }).setDepth(22).setScrollFactor(0).setOrigin(0.5, 0.5);
+    const codeValue = scene.add.text(cx, boxCY(), networkManager.roomCode, {
+      fontSize: '13px', color: '#aaddff', fontStyle: 'bold', letterSpacing: 3,
+    }).setDepth(22).setScrollFactor(0).setOrigin(0.5, 0.5);
+    const copyBtn   = scene.add.text(cx, boxCY() + 14, '📋 Copy', {
+      fontSize: '10px', color: '#667788',
+    }).setDepth(22).setScrollFactor(0).setOrigin(0.5, 0.5)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerover', () => copyBtn.setStyle({ color: '#aaddff' }))
+      .on('pointerout',  () => copyBtn.setStyle({ color: '#667788' }))
+      .on('pointerdown', () => {
+        navigator.clipboard.writeText(
+          `Join my Bolo Online game using the following room code: ${networkManager.roomCode}\nhttps://bolo-online.com?room=${networkManager.roomCode}`,
+        );
+        copyBtn.setText('✓ Copied!').setStyle({ color: '#88ff88' });
+        scene.time.delayedCall(1500, () => {
+          copyBtn.setText('📋 Copy').setStyle({ color: '#667788' });
+        });
+      });
+    scene.cameras.main.ignore([codeBg, codeLabel, codeValue, copyBtn]);
+    scene.scale.on('resize', () => {
+      const y = boxCY();
+      codeBg.setY(y); codeLabel.setY(y - 14); codeValue.setY(y); copyBtn.setY(y + 14);
+    });
+
     // ── Apply initial players as ghosts ────────────────────────────────────────
     for (const [id, p] of net.players) {
       this.playerNames.set(id, p.name);
@@ -121,8 +154,14 @@ export class MultiplayerBridge {
     });
 
     this._addNetHandler('pillboxUpdate', (d) => {
-      const pill = ctx.pillboxes.pills[d.index];
+      let pill = ctx.pillboxes.pills[d.index];
+      // Player-placed pills arrive with position data; create the sprite if we haven't seen this index
+      if (!pill && d.alive && d.tileX != null && d.tileY != null) {
+        pill = ctx.pillboxes.addPill(d.tileX, d.tileY, d.ownerId);
+        if (!networkManager.isHost) ctx.chyron.push('A pillbox was placed.');
+      }
       if (!pill) return;
+      pill.ownerId = d.ownerId;  // always keep ownerId in sync
       if (!d.alive) {
         if (pill.alive) pill.takeDamage(pill.health);
         if (!networkManager.isHost) ctx.chyron.push('A pillbox was destroyed.');
@@ -227,7 +266,7 @@ export class MultiplayerBridge {
 
     this._addNetHandler('pillboxFire', (d) => {
       const pill = ctx.pillboxes.pills[d.pillIndex];
-      if (!pill || !pill.alive || pill.owner === 'friendly') return;
+      if (!pill || !pill.alive) return;
       pill.setFacing(d.angleDeg);
       pill.fireAt(d.angleDeg, ctx.pillboxBullets);
       ctx.soundManager.playPillboxFire(ctx.soundDist(pill.x, pill.y));
@@ -259,8 +298,12 @@ export class MultiplayerBridge {
 
     // Pillbox states
     for (const ps of snap.pillboxStates) {
-      const pill = ctx.pillboxes.pills[ps.index];
+      let pill = ctx.pillboxes.pills[ps.index];
+      if (!pill && ps.alive && ps.tileX != null && ps.tileY != null) {
+        pill = ctx.pillboxes.addPill(ps.tileX, ps.tileY, ps.ownerId);
+      }
       if (!pill) continue;
+      pill.ownerId = ps.ownerId;
       if (!ps.alive) {
         if (pill.alive) pill.takeDamage(pill.health);
       } else {

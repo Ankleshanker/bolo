@@ -72,15 +72,20 @@ Tile borders: tiles whose fill == border color (Sea, Shallow, Swamp, Forest, Gra
 
 ## LobbyScene (`src/scenes/LobbyScene.ts`)
 
-**Lifecycle:** `create()` sets up the UI and registers NetworkManager listeners; `shutdown()` removes them.
+**Lifecycle:** `create()` calls `_buildPermanent()` + `_renderCurrentView()`, registers a `scale 'resize'` listener, and registers NetworkManager listeners. `shutdown()` removes all listeners and calls `scale.off('resize')`.
 
-The lobby opens on the **Multiplayer** tab by default. All UI is drawn with Phaser primitives (no DOM). Dynamic content is tracked in `dynamicObjs[]` and replaced by `_clearDynamic()` + re-render on state changes.
+The lobby opens on the **Multiplayer** tab by default. All UI is drawn with Phaser primitives (no DOM). Two object pools are maintained:
+
+- **`permanentObjs[]`** — background, grid, title, tabs. Built once by `_buildPermanent()`; destroyed and rebuilt wholesale on every window resize.
+- **`dynamicObjs[]`** — the current view's content. Rebuilt by `_clearDynamic()` + re-render on any state change or resize. Clearing `dynamicObjs` also cancels `refreshTimer` if active.
+
+On resize, `this.W/H/cx` are updated, `_clearPermanent()` + `_buildPermanent()` regenerates the chrome, then `_renderCurrentView()` dispatches to the correct view renderer.
 
 ### Layout
 
 - **Title**: "BOLO" (88px blue) + "ONLINE" (56px red italic), centered as a pair
 - **Subtitle**: "CLASSIC TANK COMBAT" (18px, `#6699bb`)
-- **Tab bar** at `H * 0.27`: SOLO | MULTIPLAYER — both 140×36px, gap 8px
+- **Tab bar** at `H * 0.27`: MULTIPLAYER (left, default active) | SOLO (right) — both 140×36px, gap 8px
 - **Dynamic area** below tabs: controlled by `mode` (`'solo'|'multi'`) and `view` (`'browse'|'create'|'room'`)
 
 ### Solo view (`_renderSolo()`)
@@ -93,10 +98,43 @@ Two map-type cards side by side:
 
 ### Multi browse view (`_renderMultiBrowse()`)
 
-- Public room list (up to 5 rows, click to join)
-- Refresh button → `networkManager.listRooms()`
-- Join-by-code input (6-char, keyboard-driven; `codeInputFocused` flag)
-- **＋ CREATE ROOM** button → `view = 'create'`
+Top-to-bottom order:
+1. **Join-by-code** — 6-char input (keyboard-driven; `codeInputFocused` flag) + JOIN button
+2. **＋ CREATE ROOM** button → `view = 'create'`
+3. **Filter bar** — pill buttons for Access / Teams / Mode / min-players (see below)
+4. **ACTIVE GAMES** table — all non-ended rooms (public and private), no cap; scrollable when overflow
+
+The table auto-refreshes every 5 s via a looping `Phaser.Time.TimerEvent` stored in `refreshTimer`. The timer is created at the end of `_renderMultiBrowse()` and cancelled in `_clearDynamic()` (mode switch, view change, resize). A `wheelHandler` stored in the same pattern handles mousewheel scroll and is also removed in `_clearDynamic()`.
+
+**Filter bar** (`_renderFilterBar()`) — horizontal row of pill buttons rendered between the section header and list panel. All filter state is class-level and persists across the 5 s re-renders. `listScrollOffset` resets to 0 on any filter or sort change.
+
+| Group | Pills | State field | Behavior |
+|---|---|---|---|
+| Access | All / Public / Private | `filterAccess: 'all'|'public'|'private'` | exclusive |
+| Teams | FFA / 2v2 / 4-way | `filterTeams: Set<string>` | multi-select toggle; empty = show all |
+| Mode | Timer / Dom. / DM | `filterMode: Set<string>` | multi-select toggle; empty = show all |
+| Min players | 1+ / 2+ / 4+ | `filterMinSlots: number` | exclusive toggle; 0 = show all |
+
+**Scroll controls** — when `_getDisplayRooms()` returns more rows than fit in the list viewport, ▲/▼ text buttons appear at the right edge and a `1–N/total` counter renders midway. Mousewheel scrolls when the pointer is inside the list bounds. `listScrollOffset: number` is clamped to `[0, maxOffset]` on every render.
+
+`_getDisplayRooms(): RoomSummary[]` — applies all active filters then sort, returning a filtered+sorted copy of `this.roomList`. Called immediately before row rendering.
+
+**Column headers** — all six headers are interactive. Clicking cycles: none → asc ▲ → desc ▼ → none. The active header renders in gold bold. `sortCol: SortCol | null` and `sortDir: 'asc'|'desc'` track state. `SortCol` is a module-level type alias: `'name'|'players'|'teams'|'mode'|'access'|'time'`.
+
+| Column | Content | x anchor | sort key |
+|---|---|---|---|
+| ROOM | `room.name` | `listLeft + 8`, left | `name` |
+| PLAYERS | `playerCount/maxPlayers` | `listLeft + listW * 0.42`, center | `players` |
+| TEAMS | FFA / 2v2 / 4-way | `listLeft + listW * 0.54`, center | `teams` |
+| MODE | Timer / Dom. / DM | `listLeft + listW * 0.66`, center | `mode` |
+| ACCESS | 🔒 / 🔓 | `listLeft + listW * 0.80`, center | `access` |
+| TIME | MM:SS for PLAYING, "Lobby" for LOBBY | `listLeft + listW - 8`, right | `time` |
+
+`timeRemainingMs` is sourced from `RoomSummary.timeRemainingMs`, which `GameRoom.getSummary()` derives from `this.timerMs` (remaining ms, decremented live by `tick()`). For LOBBY rooms it is `timerSeconds * 1000` (the configured full duration).
+
+**Private room click** — clicking a 🔒 row opens a modal code-entry overlay (`_renderPrivatePrompt()`): dimmed full-screen background, room name, 6-char input, Join/Cancel buttons. The entered code is compared client-side against `room.code` (present in `RoomSummary`). Correct → `_doJoin(room.code)`. Wrong → error flash, input cleared. State fields: `pendingPrivateRoom: RoomSummary | null`, `privateCodeInput`, `privateCodeFocused`, `privateCodeError`. The prompt is keyboard-driven via a `privateCodeFocused` branch in `_onKey()` (checked before `nameInputFocused` and `codeInputFocused`). The prompt is cleared on: Cancel, successful join, mode switch, Back from Create, Leave from Room.
+
+> **Access control note:** The server's `joinRoom` handler does not enforce `isPublic`. The client-side code prompt is a UX gate only — `room.code` is already in the client's `roomList` payload. See `library/decisions.md`.
 
 ### Create room view (`_renderCreate()`)
 
@@ -132,7 +170,7 @@ Creates a hidden `<input type="file" accept=".bmap">` element, reads the selecte
 
 ### Keyboard handler
 
-`window.addEventListener('keydown', ...)` registered in `create()`, removed in `shutdown()`. Routes to `nameInputFocused` or `codeInputFocused` text input handling, or Enter/Space to start solo.
+`window.addEventListener('keydown', ...)` registered in `create()`, removed in `shutdown()`. Priority order: `privateCodeFocused` (private room prompt) → `nameInputFocused` (create room name) → `codeInputFocused` (join-by-code) → Enter/Space to start solo.
 
 ### Network listeners
 

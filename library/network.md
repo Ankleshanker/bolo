@@ -30,15 +30,14 @@ npx wrangler deploy
 ### Server deploy (Lightsail)
 
 ```
-Host: 100.50.52.68
-User: ubuntu
-Key:  C:/Users/BenFeingoldThoryn/OneDrive - Lincoln Institute of Land Policy/Desktop/Claude Cowork/Projects/Personal/Bolo/LightsailDefaultKey-us-east-1.pem
+Host: ubuntu@api.bolo-online.com  (also reachable at 100.50.52.68)
+Key:  C:\Users\BenFeingoldThoryn\OneDrive - Lincoln Institute of Land Policy\Desktop\Claude Cowork\Projects\Personal\Bolo\LightsailDefaultKey-us-east-1.pem  (gitignored)
 ```
 
 ```bash
-ssh -i "C:/Users/BenFeingoldThoryn/OneDrive - Lincoln Institute of Land Policy/Desktop/Claude Cowork/Projects/Personal/Bolo/LightsailDefaultKey-us-east-1.pem" \
-  -o StrictHostKeyChecking=no ubuntu@100.50.52.68 \
-  "cd /opt/bolo && git pull && sudo docker compose up -d --build > /tmp/bolo-deploy.log 2>&1 && echo 'Deploy started'"
+ssh -i "C:\Users\BenFeingoldThoryn\OneDrive - Lincoln Institute of Land Policy\Desktop\Claude Cowork\Projects\Personal\Bolo\LightsailDefaultKey-us-east-1.pem" \
+  -o StrictHostKeyChecking=accept-new ubuntu@api.bolo-online.com \
+  "cd /opt/bolo && git pull && docker compose up -d --build"
 ```
 
 Nginx (`matrix-nginx` container on Lightsail) proxies WebSocket connections to the `bolo-server` Docker container on port 3000. TLS certs managed by certbot with Cloudflare DNS-01 challenge.
@@ -95,14 +94,16 @@ sendBulletFired(x, y, angleDeg)
 sendBulletHit(targetId, damage)
 sendPlayerKillSelf(killerId)                 // victim reports own death
 sendTileChanged(tileX, tileY, tile)
-sendPillboxUpdate(idx, ownerId, health, alive)
-sendBaseUpdate(idx, ownerId)
+sendPillboxUpdate(idx, ownerId, health, alive, tileX?, tileY?)  // tileX/tileY required for player-placed pills
+sendBaseUpdate(idx, ownerId, health, shells, mines)
 sendMineAdded(tileX, tileY)
 sendMineDetonated(tileX, tileY)
 sendBoatAdded(tileX, tileY)
 sendSoldierState(x, y, active)               // volatile, 20 Hz — builder position sync
 sendPillboxBulletFired(pillIndex, x, y, ang) // host only — relayed to non-hosts
 sendPillboxFire(pillIndex, angleDeg)         // host only — relayed to non-hosts
+sendPillPickupSpawned(id, x, y)              // destroyer emits; server stores + relays to others
+sendPillPickupCollected(id)                  // collector candidate; server first-come guard, then broadcasts
 sendRequestSnapshot()                        // called once at end of setupMultiplayer()
 ```
 
@@ -160,10 +161,11 @@ States: `LOBBY → PLAYING → ENDED`
 
 `getSnapshot(): S2C_StateSnapshot` — used for late joiners. Contains:
 - `terrainDiffs[]` — every tile mutated since game start; deduplicated by `(tileX, tileY)` — a later mutation to the same tile overwrites the earlier entry
-- `pillboxStates[]` — all known pill states (index, owner, health, alive)
-- `baseStates[]` — all known base states (index, owner)
+- `pillboxStates[]` — all known pill states (index, ownerId, health, alive, tileX?, tileY?). `tileX`/`tileY` are populated for player-placed pills so late joiners can reconstruct the sprite.
+- `baseStates[]` — all known base states (index, ownerId, health, shells, mines)
 - `mines[]` — all active mines; entries removed on `mineDetonated`
 - `boats[]` — all placed boats; entries pruned when their tile is overwritten via `updateTileChanged()` (a tile mutation means the boat is gone)
+- `pillPickups[]` — all uncollected pill pickups `{ id, x, y }`; entries added on `pillPickupSpawned`, removed on `pillPickupCollected`
 - `tankStates[]` — last known tank state per player
 - `timeElapsed` — ms since game start
 
@@ -190,11 +192,13 @@ States: `LOBBY → PLAYING → ENDED`
 | `bulletHit` | `{ targetId, damage, shooterId }` | Relayed to target only |
 | `playerKill` | `{ victimId, killerId? }` | Shooter omits killerId; victim sets both |
 | `tileChanged` | `{ tileX, tileY, displayTile }` | Relayed + stored in snapshot |
-| `pillboxUpdate` | `{ index, ownerId, health, alive }` | Relayed + stored in snapshot |
-| `baseUpdate` | `{ index, ownerId }` | Relayed + stored in snapshot |
+| `pillboxUpdate` | `{ index, ownerId, health, alive, tileX?, tileY? }` | Relayed + stored in snapshot. `tileX`/`tileY` are included when placing a new pill so remote clients can create the sprite. |
+| `baseUpdate` | `{ index, ownerId, health, shells, mines }` | Relayed + stored in snapshot; sent on capture, neutralize, and each MP refuel tick |
 | `mineAdded` | `{ tileX, tileY, ownerPlayerId }` | Relayed + stored in snapshot |
 | `mineDetonated` | `{ tileX, tileY }` | Relayed + snapshot mine removed |
 | `boatAdded` | `{ tileX, tileY }` | Relayed + stored in snapshot |
+| `pillPickupSpawned` | `{ id, x, y }` | Destroyer emits; stored in snapshot; relayed to all **others** (destroyer already spawned locally) |
+| `pillPickupCollected` | `{ id }` | Collector candidate; server removes from snapshot if present (first-come), broadcasts `S2C_PillPickupCollected` to room; silently dropped if already gone |
 | `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Host only; server relays to all other clients |
 | `pillboxFire` | `{ pillIndex, angleDeg }` | Host only; server relays to all other clients |
 | `soldierState` | `{ x, y, active }` | Volatile; server relays with `playerId` appended |
@@ -220,11 +224,13 @@ States: `LOBBY → PLAYING → ENDED`
 | `bulletFired` | `{ playerId, x, y, angleDeg, timestamp }` | |
 | `bulletHit` | `{ targetId, damage, shooterId }` | |
 | `tileChanged` | `{ playerId, tileX, tileY, displayTile }` | |
-| `pillboxUpdate` | `{ index, ownerId, health, alive }` | |
-| `baseUpdate` | `{ index, ownerId }` | |
+| `pillboxUpdate` | `{ index, ownerId, health, alive, tileX?, tileY? }` | `tileX`/`tileY` present for player-placed pills; receiving client calls `addPill()` if index is unknown |
+| `baseUpdate` | `{ index, ownerId, health, shells, mines }` | |
 | `mineAdded` | `{ tileX, tileY, ownerPlayerId }` | |
 | `mineDetonated` | `{ tileX, tileY }` | |
 | `boatAdded` | `{ tileX, tileY }` | |
+| `pillPickupSpawned` | `{ id, x, y }` | Relayed to all clients except the destroyer |
+| `pillPickupCollected` | `{ id, collectorId }` | Broadcast to all clients including collector; collector sets `tank.pillsCarried = 1` |
 | `timeUpdate` | `{ remaining: number }` | ms remaining; drives client timer in MP |
 | `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Relayed from host to all other clients |
 | `pillboxFire` | `{ pillIndex, angleDeg }` | Relayed from host to all other clients |
@@ -261,15 +267,17 @@ interface RoomSettings {
 
 In multiplayer, only the host runs the full pillbox AI each frame:
 
-1. Host builds a `PillTarget[]` list: local tank (if alive) + all alive ghost positions (`ghostManager.getAlivePillTargets()`).
-2. `pillboxes.update()` picks the nearest visible target per pill, fires into `pillboxBullets`, calls `onShot(pillIndex, x, y, angleDeg)`.
-3. Host emits `pillboxBulletFired { pillIndex, x, y, angleDeg }` and `pillboxFire { pillIndex, angleDeg }` to the server.
-4. Server relays both to **all other clients** (host excluded — it already fired locally).
-5. Non-host clients receive `pillboxFire`, call `pill.setFacing(angleDeg)` and `pill.fireAt(angleDeg, pillboxBullets)`, and play the sound.
-6. The existing `pillboxBullets` vs `tank.sprite` overlap on each machine detects damage locally — no new hit protocol needed.
-7. `pillboxBullets` vs `ghostManager.group` overlap (Phase 2) kills the bullet visually when it reaches a ghost sprite on spectator screens.
+1. Host builds a `PillTarget[]` list: local tank (if alive, with `playerId`) + all alive ghost positions (`ghostManager.getAlivePillTargets()`, which now includes `playerId` per entry).
+2. Host calls `pillboxes.update()` with an `isTeammate` callback: `(pillOwnerId, targetPlayerId) => networkManager.sameTeam(pillOwnerId, targetPlayerId)`. `PillboxManager` pre-filters each pill's target list to exclude same-team players before passing it to the pill's AI — so a player-placed pill never shoots its own team.
+3. `pillboxes.update()` picks the nearest visible unfiltered target per pill, fires into `pillboxBullets`, calls `onShot(pillIndex, x, y, angleDeg)`.
+4. Host emits `pillboxBulletFired { pillIndex, x, y, angleDeg }` to the server.
+5. Server relays to **all other clients** (host excluded — it already fired locally).
+6. Non-host clients receive `pillboxBulletFired`, fire the bullet at the broadcast world coordinates, and play the sound. No ownership check needed — the host already filtered targets.
+7. The existing `pillboxBullets` vs `tank.sprite` overlap on each machine detects damage locally — no new hit protocol needed.
 
-Non-hosts call `pillboxes.update()` with `bullets = null` — rotation logic runs (approximate visual using local tank target) but no bullet is created.
+Non-hosts call `pillboxes.update()` with `bullets = null` and no `isTeammate` callback — `PillboxManager` skips friendly pills entirely (rotation-only for neutral/enemy pills using local tank as the approximate target).
+
+**`networkManager.sameTeam(a, b)`** — compares two arbitrary playerIds: FFA = exact match, team modes = same `teamIndex`. Distinct from `isMyTeam()` which is always relative to the local player.
 
 ---
 

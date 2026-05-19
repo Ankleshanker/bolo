@@ -54,9 +54,9 @@ class LobbyManager {
 
   // ─── Listing ────────────────────────────────────────────────────────────
 
-  listPublicRooms(): RoomSummary[] {
+  listAllActiveRooms(): RoomSummary[] {
     return [...this.rooms.values()]
-      .filter(r => r.settings.isPublic && r.state !== 'ENDED')
+      .filter(r => r.state !== 'ENDED')
       .map(r => r.getSummary());
   }
 

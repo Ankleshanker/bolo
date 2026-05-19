@@ -116,9 +116,14 @@
 ## Base HP, supply, and combat recapture — 2026-05-18
 
 **Decision:** Bases now require combat to recapture: each owned base has `BASE_MAX_HEALTH = 4` HP tracked in `baseHealth[]`. Player bullets hitting an enemy base decrement HP via a `physics.add.overlap` on an invisible physics sprite group (`baseGroup`). At 0 HP the base turns neutral (white). Neutral bases are still captured by driving over them. Supply (`base.shells` 0–90, `base.mines` 0–20) replenishes over 5 minutes and is drawn down by the continuous-parking refuel (1-second ticks). Newly captured bases start with 0 supply.
+
+**Color indicator:** The base rect lerps from full team/enemy color toward white as HP decreases (`_baseRectColor` helper, per-channel RGB lerp). At full HP the rect shows the owner's color; at 0 HP it's white. This runs on every damage event, capture, neutralize, and network sync.
+
+**Supply sync (MP):** `_doBaseRefuel` broadcasts `sendBaseUpdate` after each successful refuel tick. This prevents long-running games from diverging when shells/mines are drawn faster than the 5-minute replenish rate. Client-independent replenishment still runs locally; the broadcast corrects drift once per second per parked player.
+
 **Why:** Aligns gameplay with the original Bolo mechanic: bases have strategic value requiring defense, not just conquest. Supply scarcity and the 5-minute replenish window add resource pressure.
-**Alternatives rejected:** Separate physics sprites for base bodies (considered using a `staticGroup`) — a regular dynamic group with `setImmovable(true)` is simpler and the performance difference is negligible at ≤8 bases per map. Per-frame supply sync to server — client-independent replenishment avoids constant traffic; supply is only synced on capture events and in the snapshot, so late joiners receive correct state.
-**Applies to:** `src/scenes/GameScene.ts` (base methods, `setupCollision`), `src/network/types.ts`, `server/src/types.ts`, `src/network/NetworkManager.ts`.
+**Alternatives rejected:** Separate physics sprites for base bodies (considered using a `staticGroup`) — a regular dynamic group with `setImmovable(true)` is simpler and the performance difference is negligible at ≤8 bases per map. Per-frame supply sync to server — client-independent replenishment avoids constant traffic; supply is synced on capture events, refuel ticks, and in the snapshot.
+**Applies to:** `src/scenes/GameScene.ts` (base methods, `setupCollision`, `_baseRectColor`), `src/network/types.ts`, `server/src/types.ts`, `src/network/NetworkManager.ts`.
 
 ---
 
@@ -163,6 +168,15 @@
 **Why:** Ghost positions are overwritten every frame by snapshot interpolation — Phaser physics can never displace them without causing jitter. Making ghosts immovable means all separation energy goes into the local tank, which is the one entity whose position we fully control. The network push follows the same shooter-authoritative model as bullet hits: the client with the most accurate local information (the tank doing the ramming) sends the event; the server caps the magnitude to prevent griefing.
 **Alternatives rejected:** Mutable ghost physics — interpolation would snap the ghost back every frame, fighting the physics and causing visible jitter. Server-side collision simulation — would require the server to run a full physics step for every player pair, prohibitive at 16 players. Overlap instead of collider — overlap doesn't generate automatic separation, so the tank would still pass through; manual separation in the callback is more complex and less accurate.
 **Applies to:** `src/network/GhostTankManager.ts` (`addGhost`, `update`, `getGhostVelocity`), `src/scenes/GameScene.ts` (`setupCollision`, `setupMultiplayer`), `src/network/NetworkManager.ts` (`sendTankPush`), `server/src/index.ts` (`tankPush` handler), `src/network/types.ts`, `server/src/types.ts`.
+
+---
+
+## Active Games list shows all rooms; private lock is a client-side UX gate — 2026-05-18
+
+**Decision:** `LobbyManager.listAllActiveRooms()` returns every non-ended room regardless of `settings.isPublic`. The server's `joinRoom` handler has no `isPublic` enforcement gate. On the client, clicking a 🔒 row opens a modal that asks the player to type the 6-digit code; the code is compared against `room.code` which is already present in the `RoomSummary` payload. This is a UX friction gate, not a security gate.
+**Why:** The primary use-case for showing private rooms is activity visibility (see who is playing). Hiding them entirely would make the list useless for that purpose. Enforcing access at the join level would be a meaningful security feature requiring server-side secret storage — a deliberate future decision, not a default. The client-side prompt is a reasonable middle ground: it deters accidental joins while keeping the implementation trivial.
+**Critical:** Do not add `if (!room.settings.isPublic) return;` to the `joinRoom` handler thinking you're "fixing" an oversight. That would break late-join for private rooms and contradict the design above. If real access control is desired, the correct design is: the host sets a hashed password on room creation, the `joinRoom` payload includes the plaintext, and the server checks the hash. The list can still show the room.
+**Applies to:** `server/src/LobbyManager.ts` (`listAllActiveRooms`), `server/src/index.ts` (`joinRoom` handler), `src/scenes/LobbyScene.ts` (`_renderMultiBrowse`, `_renderPrivatePrompt`, `_submitPrivateCode`).
 
 ---
 

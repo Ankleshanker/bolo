@@ -92,7 +92,7 @@ io.on('connection', (socket) => {
   // ─── Room browsing ───────────────────────────────────────────────────────
 
   socket.on('listRooms', () => {
-    socket.emit('roomList', { rooms: lobbyManager.listPublicRooms() });
+    socket.emit('roomList', { rooms: lobbyManager.listAllActiveRooms() });
   });
 
   // ─── Create room ──────────────────────────────────────────────────────────

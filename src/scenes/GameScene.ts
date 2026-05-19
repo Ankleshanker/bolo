@@ -256,8 +256,8 @@ export class GameScene extends Phaser.Scene {
     if (this.multiplayerMode) {
       if (networkManager.isHost) {
         // Host is authoritative: build target list from ALL alive players and run AI
-        const pillTargets: { x: number; y: number; hidden: boolean }[] = [];
-        if (!this.dead) pillTargets.push({ x: this.tank.x, y: this.tank.y, hidden: inForest });
+        const pillTargets: { x: number; y: number; hidden: boolean; playerId: string }[] = [];
+        if (!this.dead) pillTargets.push({ x: this.tank.x, y: this.tank.y, hidden: inForest, playerId: networkManager.playerId });
         for (const t of (this.ghostManager?.getAlivePillTargets() ?? [])) pillTargets.push(t);
         this.pillboxes.update(delta, pillTargets, this.pillboxBullets,
           (pillIdx, px, py, ang) => {
@@ -819,10 +819,10 @@ export class GameScene extends Phaser.Scene {
         t.trees -= COST_PILLBOX;
         t.pillsCarried = 0;
         this.dispatchSoldier(tileX, tileY, () => {
-          const pill = this.pillboxes.addPill(tileX, tileY);
+          const pill = this.pillboxes.addPill(tileX, tileY, networkManager.playerId);
           if (this.multiplayerMode) {
             const idx = this.pillboxes.pills.indexOf(pill);
-            networkManager.sendPillboxUpdate(idx, networkManager.playerId, 4, true);
+            networkManager.sendPillboxUpdate(idx, networkManager.playerId, 4, true, tileX, tileY);
           }
         });
         break;

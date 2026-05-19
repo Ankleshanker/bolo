@@ -66,7 +66,7 @@ export class BaseManager {
       const cy = base.y * TILE_SIZE + TILE_SIZE / 2;
       const neutral = base.owner === 0xFF;
 
-      const rect = this.scene.add.rectangle(cx, cy, 24, 24, neutral ? 0xffffff : this.teamColor()).setDepth(2);
+      const rect = this.scene.add.rectangle(cx, cy, 24, 24, this._baseRectColor(base.owner, neutral ? 0 : BASE_MAX_HEALTH)).setDepth(2);
       this.baseRects.push(rect);
       this.scene.add.text(cx, cy, '★', { fontSize: '14px', color: '#000000' }).setDepth(3).setOrigin(0.5);
 
@@ -108,13 +108,15 @@ export class BaseManager {
         (bullet.body as Phaser.Physics.Arcade.Body).enable = false;
 
         this.baseHealth[idx] = Math.max(0, this.baseHealth[idx] - 1);
+        this.baseRects[idx]?.setFillStyle(this._baseRectColor(
+          this.baseHealth[idx] === 0 ? 0xFF : base.owner, this.baseHealth[idx]
+        ));
 
         if (this.baseHealth[idx] === 0) {
           base.owner  = 0xFF;
           base.shells = 0;
           base.mines  = 0;
           this.baseOwnerIds[idx] = null;
-          this.baseRects[idx]?.setFillStyle(0xffffff);
           this.chyron.push('A base was neutralized.');
           if (this.multiplayerMode) {
             networkManager.sendBaseUpdate(idx, null, 0, 0, 0);
@@ -148,12 +150,10 @@ export class BaseManager {
     if (d.ownerId === null) {
       base.owner = 0xFF;
       this.baseOwnerIds[d.index] = null;
-      this.baseRects[d.index]?.setFillStyle(0xffffff);
       if (!wasNeutral) this.chyron.push('A base was neutralized.');
     } else if (networkManager.isMyTeam(d.ownerId)) {
       base.owner = 0x00;
       this.baseOwnerIds[d.index] = d.ownerId;
-      this.baseRects[d.index]?.setFillStyle(this.teamColor());
       if (d.ownerId !== networkManager.playerId && wasNeutral) {
         const name = this._playerName(d.ownerId);
         this.chyron.push(`${name} claimed a base.`);
@@ -161,12 +161,12 @@ export class BaseManager {
     } else {
       base.owner = 0x01;
       this.baseOwnerIds[d.index] = d.ownerId;
-      this.baseRects[d.index]?.setFillStyle(0xff4444);
       if (wasNeutral) {
         const name = this._playerName(d.ownerId);
         this.chyron.push(`${name} claimed a base.`);
       }
     }
+    this.baseRects[d.index]?.setFillStyle(this._baseRectColor(base.owner, d.health));
   }
 
   /** Called when applying a full state snapshot. */
@@ -180,14 +180,12 @@ export class BaseManager {
       this.baseOwnerIds[bs.index] = bs.ownerId;
       if (bs.ownerId === null) {
         base.owner = 0xFF;
-        this.baseRects[bs.index]?.setFillStyle(0xffffff);
       } else if (networkManager.isMyTeam(bs.ownerId)) {
         base.owner = 0x00;
-        this.baseRects[bs.index]?.setFillStyle(this.teamColor());
       } else {
         base.owner = 0x01;
-        this.baseRects[bs.index]?.setFillStyle(0xff4444);
       }
+      this.baseRects[bs.index]?.setFillStyle(this._baseRectColor(base.owner, bs.health));
     }
   }
 
@@ -246,7 +244,7 @@ export class BaseManager {
     base.mines  = 0;
     this.baseHealth[idx]   = BASE_MAX_HEALTH;
     this.baseOwnerIds[idx] = this.multiplayerMode ? networkManager.playerId : 'local';
-    this.baseRects[idx]?.setFillStyle(this.teamColor());
+    this.baseRects[idx]?.setFillStyle(this._baseRectColor(0x00, BASE_MAX_HEALTH));
     this.soundManager.playBuildTile();
     this.chyron.push('You claimed a base.');
     if (this.multiplayerMode) {
@@ -273,7 +271,13 @@ export class BaseManager {
       if (give > 0) { this.tank.mines += give; base.mines -= give; refueled = true; }
     }
 
-    if (refueled) this.soundManager.playBaseResupply();
+    if (refueled) {
+      this.soundManager.playBaseResupply();
+      if (this.multiplayerMode) {
+        networkManager.sendBaseUpdate(idx, this.baseOwnerIds[idx], this.baseHealth[idx],
+          this.mapData.bases[idx].shells, this.mapData.bases[idx].mines);
+      }
+    }
   }
 
   private updateBaseSupplies(delta: number): void {
@@ -292,5 +296,18 @@ export class BaseManager {
   /** Look up a player name — falls through to a generic string if not found. */
   private _playerName(playerId: string): string {
     return networkManager.players.get(playerId)?.name ?? 'A player';
+  }
+
+  private _baseRectColor(ownerCode: number, health: number): number {
+    if (ownerCode === 0xFF || health <= 0) return 0xffffff;
+    const full = ownerCode === 0x00 ? this.teamColor() : 0xff4444;
+    if (health >= BASE_MAX_HEALTH) return full;
+    const t  = (BASE_MAX_HEALTH - health) / BASE_MAX_HEALTH;
+    const r1 = (full >> 16) & 0xff;
+    const g1 = (full >>  8) & 0xff;
+    const b1 =  full        & 0xff;
+    return (Math.round(r1 + (0xff - r1) * t) << 16)
+         | (Math.round(g1 + (0xff - g1) * t) <<  8)
+         |  Math.round(b1 + (0xff - b1) * t);
   }
 }
