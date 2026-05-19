@@ -298,16 +298,18 @@ export class GameRoom {
 
   // ─── World mutations ──────────────────────────────────────────────────────
 
-  updateTileChanged(diff: TileDiff): void {
+  updateTileChanged(diff: TileDiff): boolean {
     const i = this.snapshot.terrainDiffs.findIndex(d => d.tileX === diff.tileX && d.tileY === diff.tileY);
     if (i >= 0) this.snapshot.terrainDiffs[i] = diff;
     else         this.snapshot.terrainDiffs.push(diff);
     // A tile change means a boat at this position (if any) is gone.
-    this.removeBoatAt(diff.tileX, diff.tileY);
+    return this.removeBoatAt(diff.tileX, diff.tileY);
   }
 
-  removeBoatAt(tileX: number, tileY: number): void {
+  removeBoatAt(tileX: number, tileY: number): boolean {
+    const before = this.snapshot.boats.length;
     this.snapshot.boats = this.snapshot.boats.filter(b => !(b.tileX === tileX && b.tileY === tileY));
+    return this.snapshot.boats.length < before;
   }
 
   addPillPickup(state: PillPickupState): void {

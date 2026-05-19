@@ -53,3 +53,8 @@ export interface C2S_PillPickupSpawned  { id: string; x: number; y: number; }
 export interface S2C_PillPickupSpawned  { id: string; x: number; y: number; }
 export interface C2S_PillPickupCollected { id: string; }
 export interface S2C_PillPickupCollected { id: string; collectorId: string; }
+export interface C2S_BoatPickedUp { tileX: number; tileY: number; }
+export interface S2C_BoatPickedUp { tileX: number; tileY: number; }
+export interface C2S_BoatDropped  { tileX: number; tileY: number; }
+export interface S2C_BoatDropped  { tileX: number; tileY: number; }
+export interface S2C_BoatRemoved  { tileX: number; tileY: number; }

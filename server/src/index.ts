@@ -7,7 +7,7 @@ import type {
   C2S_CreateRoom, C2S_JoinRoom, C2S_RejoinRoom,
   C2S_UpdateSettings, C2S_KickPlayer,
   C2S_TileChanged, C2S_PillboxUpdate, C2S_BaseUpdate,
-  C2S_MineAdded, C2S_MineDetonated, C2S_BoatAdded,
+  C2S_MineAdded, C2S_MineDetonated, C2S_BoatAdded, C2S_BoatPickedUp, C2S_BoatDropped,
   C2S_BulletFired, C2S_BulletHit, C2S_PlayerKill,
   C2S_PillboxBulletFired,
   C2S_SoldierState,
@@ -304,9 +304,12 @@ io.on('connection', (socket) => {
     if (!room || room.state !== 'PLAYING') return;
     const playerId = room.socketToPlayer.get(socket.id);
     if (!playerId) return;
-    room.updateTileChanged(data);
+    const boatWasHere = room.updateTileChanged(data);
     const payload: S2C_TileChanged = { ...data, playerId };
     socket.to(room.roomId).emit('tileChanged', payload);
+    if (boatWasHere) {
+      socket.to(room.roomId).emit('boatRemoved', { tileX: data.tileX, tileY: data.tileY });
+    }
   });
 
   socket.on('pillboxUpdate', (data: C2S_PillboxUpdate) => {
@@ -348,6 +351,20 @@ io.on('connection', (socket) => {
     if (!room || room.state !== 'PLAYING') return;
     room.addBoat(data);
     socket.to(room.roomId).emit('boatAdded', data);
+  });
+
+  socket.on('boatPickedUp', (data: C2S_BoatPickedUp) => {
+    const room = lobbyManager.getRoomBySocketId(socket.id);
+    if (!room || room.state !== 'PLAYING') return;
+    room.removeBoatAt(data.tileX, data.tileY);
+    socket.to(room.roomId).emit('boatPickedUp', data);
+  });
+
+  socket.on('boatDropped', (data: C2S_BoatDropped) => {
+    const room = lobbyManager.getRoomBySocketId(socket.id);
+    if (!room || room.state !== 'PLAYING') return;
+    room.addBoat(data);
+    socket.to(room.roomId).emit('boatDropped', data);
   });
 
   socket.on('pillPickupSpawned', (data: C2S_PillPickupSpawned) => {

@@ -534,6 +534,18 @@ export class GameScene extends Phaser.Scene {
       this.ensureBoatAtTile(d.tileX, d.tileY);
     });
 
+    this._addNetHandler('boatPickedUp', (d) => {
+      this._removeBoatSpriteAt(d.tileX, d.tileY);
+    });
+
+    this._addNetHandler('boatDropped', (d) => {
+      this.ensureBoatAtTile(d.tileX, d.tileY);
+    });
+
+    this._addNetHandler('boatRemoved', (d) => {
+      this._removeBoatSpriteAt(d.tileX, d.tileY);
+    });
+
     // ── Combat ────────────────────────────────────────────────────────────────
     this._addNetHandler('bulletFired', (d) => {
       if (d.shooterId === net.playerId) return; // we already spawned our own bullet
@@ -823,9 +835,18 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private _removeBoatSpriteAt(tileX: number, tileY: number) {
+    const idx = this.boats.findIndex(b => b.tileX === tileX && b.tileY === tileY);
+    if (idx < 0) return;
+    if (this.boats[idx] === this.activeBoat) return;
+    this.boats[idx].sprite.destroy();
+    this.boats.splice(idx, 1);
+  }
+
   private setTile(tileX: number, tileY: number, displayTile: number, broadcast = true) {
     const wasRoad = this.mapData.terrain[tileY]?.[tileX] === DisplayTile.Road;
     if (this.mapData.terrain[tileY]) this.mapData.terrain[tileY][tileX] = displayTile;
+    this._removeBoatSpriteAt(tileX, tileY);
 
     if (displayTile === DisplayTile.Road) {
       this.updateRoadAndNeighbors(tileX, tileY);
@@ -904,6 +925,7 @@ export class GameScene extends Phaser.Scene {
     const spawnTile = this.mapData.terrain[sty]?.[stx] ?? DisplayTile.Sea;
     if (spawnTile === DisplayTile.Sea || spawnTile === DisplayTile.Shallow) {
       this.ensureBoatAtTile(stx, sty);
+      if (this.multiplayerMode) networkManager.sendBoatAdded(stx, sty);
     }
   }
 
@@ -964,6 +986,7 @@ export class GameScene extends Phaser.Scene {
     const respawnTile = this.mapData.terrain[sty]?.[stx] ?? DisplayTile.Sea;
     if (respawnTile === DisplayTile.Sea || respawnTile === DisplayTile.Shallow) {
       this.ensureBoatAtTile(stx, sty);
+      if (this.multiplayerMode) networkManager.sendBoatAdded(stx, sty);
     }
     this.tank.sprite.setPosition(sx, sy).setVisible(true).setScale(1).setAlpha(1);
     this.tank.body.enable = true;
@@ -1519,6 +1542,9 @@ export class GameScene extends Phaser.Scene {
         this.activeBoat.tileY = ty;
         this.activeBoat.sprite.setPosition(this.tank.x, this.tank.y);
       } else {
+        if (this.multiplayerMode) {
+          networkManager.sendBoatDropped(this.activeBoat.tileX, this.activeBoat.tileY);
+        }
         this.inBoat     = false;
         this.activeBoat = null;
         this.soundManager.playBoatExit();
@@ -1529,6 +1555,9 @@ export class GameScene extends Phaser.Scene {
           this.inBoat     = true;
           this.activeBoat = boat;
           this.soundManager.playBoatEnter();
+          if (this.multiplayerMode) {
+            networkManager.sendBoatPickedUp(boat.tileX, boat.tileY);
+          }
           break;
         }
       }

@@ -23,6 +23,9 @@ import type {
   S2C_MineAdded,
   S2C_MineDetonated,
   S2C_BoatAdded,
+  S2C_BoatPickedUp,
+  S2C_BoatDropped,
+  S2C_BoatRemoved,
   S2C_TimeUpdate,
   S2C_PlayerKill,
   S2C_GameOver,
@@ -58,6 +61,9 @@ export type NetEvents = {
   mineAdded:         S2C_MineAdded;
   mineDetonated:     S2C_MineDetonated;
   boatAdded:         S2C_BoatAdded;
+  boatPickedUp:      S2C_BoatPickedUp;
+  boatDropped:       S2C_BoatDropped;
+  boatRemoved:       S2C_BoatRemoved;
   timeUpdate:        S2C_TimeUpdate;
   playerKill:           S2C_PlayerKill;
   gameOver:             S2C_GameOver;
@@ -100,6 +106,9 @@ function makeListenerMap(): ListenerMap {
     mineAdded:         new Set(),
     mineDetonated:     new Set(),
     boatAdded:         new Set(),
+    boatPickedUp:      new Set(),
+    boatDropped:       new Set(),
+    boatRemoved:       new Set(),
     timeUpdate:        new Set(),
     playerKill:          new Set(),
     gameOver:            new Set(),
@@ -123,7 +132,8 @@ const SERVER_EVENTS: (keyof NetEvents)[] = [
   'playerReconnected', 'playerRemoved', 'settingsUpdated', 'hostChanged',
   'gameStart', 'stateSnapshot', 'tankState', 'bulletFired', 'bulletHit',
   'tileChanged', 'pillboxUpdate', 'baseUpdate', 'mineAdded', 'mineDetonated',
-  'boatAdded', 'timeUpdate', 'playerKill', 'gameOver', 'pillboxBulletFired',
+  'boatAdded', 'boatPickedUp', 'boatDropped', 'boatRemoved',
+  'timeUpdate', 'playerKill', 'gameOver', 'pillboxBulletFired',
   'soldierState', 'pillboxFire', 'tankPush',
   'pillPickupSpawned', 'pillPickupCollected',
   'kicked', 'error',
@@ -280,6 +290,14 @@ export class NetworkManager {
 
   sendBoatAdded(tileX: number, tileY: number): void {
     this.socket?.emit('boatAdded', { tileX, tileY });
+  }
+
+  sendBoatPickedUp(tileX: number, tileY: number): void {
+    this.socket?.emit('boatPickedUp', { tileX, tileY });
+  }
+
+  sendBoatDropped(tileX: number, tileY: number): void {
+    this.socket?.emit('boatDropped', { tileX, tileY });
   }
 
   sendRequestSnapshot(): void {

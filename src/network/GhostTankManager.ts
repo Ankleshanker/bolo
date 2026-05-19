@@ -14,6 +14,7 @@ interface GhostSnapshot {
   alive: boolean;
   inForest: boolean;
   health: number;
+  inBoat: boolean;
 }
 
 interface GhostTank {
@@ -29,6 +30,7 @@ interface GhostTank {
   tint: number;
   name: string;
   soldierSprite: Phaser.GameObjects.Sprite | null;
+  boatSprite:    Phaser.GameObjects.Sprite | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,6 +147,7 @@ export class GhostTankManager {
       tint,
       name,
       soldierSprite: null,
+      boatSprite:    null,
     };
 
     this.ghosts.set(playerId, ghost);
@@ -159,6 +162,7 @@ export class GhostTankManager {
     ghost.healthBar.destroy();
     ghost.healthBarBg.destroy();
     ghost.soldierSprite?.destroy();
+    ghost.boatSprite?.destroy();
     this.ghosts.delete(playerId);
   }
 
@@ -174,6 +178,7 @@ export class GhostTankManager {
       alive:     state.alive,
       inForest:  state.inForest,
       health:    state.health,
+      inBoat:    state.inBoat,
     };
 
     ghost.snapshots.push(snap);
@@ -213,6 +218,7 @@ export class GhostTankManager {
         ghost.nameLabel.setVisible(false);
         ghost.healthBar.setVisible(false);
         ghost.healthBarBg.setVisible(false);
+        ghost.boatSprite?.setVisible(false);
         continue;
       }
 
@@ -222,6 +228,7 @@ export class GhostTankManager {
       let ia: number;
       let inForest = newest.inForest;
       let health   = newest.health;
+      let inBoat   = newest.inBoat;
 
       if (snaps.length === 1) {
         // Only one snapshot — snap to it immediately
@@ -230,6 +237,7 @@ export class GhostTankManager {
         ia = snaps[0].angle;
         inForest = snaps[0].inForest;
         health   = snaps[0].health;
+        inBoat   = snaps[0].inBoat;
       } else {
         // Find the two snapshots that bracket renderTime
         let prev = snaps[0];
@@ -256,6 +264,7 @@ export class GhostTankManager {
         ia       = lerpAngle(prev.angle, next.angle, t);
         inForest = t >= 0.5 ? next.inForest : prev.inForest;
         health   = lerp(prev.health, next.health, t);
+        inBoat   = t >= 0.5 ? next.inBoat : prev.inBoat;
       }
 
       ghost.interpolated = { x: ix, y: iy, angle: ia };
@@ -272,6 +281,7 @@ export class GhostTankManager {
         ghost.nameLabel.setVisible(false);
         ghost.healthBar.setVisible(false);
         ghost.healthBarBg.setVisible(false);
+        ghost.boatSprite?.setVisible(false);
         continue;
       }
 
@@ -301,6 +311,16 @@ export class GhostTankManager {
       ghost.healthBar.setSize(barWidth > 0 ? barWidth : 0, HEALTH_BAR_HEIGHT);
       ghost.healthBar.setFillStyle(healthColor(health));
       ghost.healthBar.setVisible(true);
+
+      // --- Render boat under ghost when carrying one ---
+      if (inBoat) {
+        if (!ghost.boatSprite) {
+          ghost.boatSprite = this.scene.add.sprite(ix, iy, 'boat').setDepth(4);
+        }
+        ghost.boatSprite.setPosition(ix, iy).setVisible(true);
+      } else {
+        ghost.boatSprite?.setVisible(false);
+      }
     }
   }
 
@@ -385,6 +405,7 @@ export class GhostTankManager {
       ghost.healthBar.destroy();
       ghost.healthBarBg.destroy();
       ghost.soldierSprite?.destroy();
+      ghost.boatSprite?.destroy();
     }
     this.ghosts.clear();
   }
