@@ -963,7 +963,7 @@ export class LobbyScene extends Phaser.Scene {
     );
     void nameBox;
     this._push(this.add.text(ctrlX + ctrlW / 2, gy,
-      (this.roomNameInput || 'My Room') + (this.nameInputFocused ? '|' : ''),
+      (this.roomNameInput || `${this.playerNameInput || 'Player'}'s Room`) + (this.nameInputFocused ? '|' : ''),
       { fontSize: '14px', color: this.roomNameInput ? C.white : '#334455' }).setOrigin(0.5));
     gy += rowH;
 
