@@ -35,15 +35,17 @@ export class GameOverUI {
 
   /** Call once during scene create(). */
   build(): void {
-    const style = { fontSize: '14px', color: '#ffffff', backgroundColor: '#00000099', padding: { x: 6, y: 4 } };
-    this.timerText = this.scene.add.text(0, 8, '', style).setScrollFactor(0).setDepth(30);
-    this.scoreText = this.scene.add.text(0, 32, '', style).setScrollFactor(0).setDepth(30);
+    const panelStyle = { fontSize: '12px', color: '#aabbcc', backgroundColor: '#00000099', padding: { x: 6, y: 3 } };
+    this.timerText = this.scene.add.text(0, 0, '', panelStyle).setScrollFactor(0).setDepth(30).setOrigin(0.5, 0.5);
+    this.scoreText = this.scene.add.text(0, 0, '', panelStyle).setScrollFactor(0).setDepth(30).setOrigin(0.5, 0.5);
     this._spectatorText = this.scene.add.text(0, 20, '', {
       fontSize: '12px', color: '#ffdd88', backgroundColor: '#00000099', padding: { x: 6, y: 4 },
     }).setScrollFactor(0).setDepth(30).setOrigin(0.5, 0).setVisible(false);
     this._reposition();
     this.scene.scale.on('resize', () => this._reposition());
-    this.uiCam.ignore([this.timerText, this.scoreText, this._spectatorText]);
+    // Timer/score live in the panel (uiCam); keep them out of the main game viewport
+    this.scene.cameras.main.ignore([this.timerText, this.scoreText]);
+    this.uiCam.ignore([this._spectatorText]);
   }
 
   /** Refreshes the timer and score displays. Call every frame from GameScene.updateHUD(). */
@@ -155,15 +157,16 @@ export class GameOverUI {
   /** Reference needed by setupMultiplayer to show/hide the spectator label. */
   get spectatorText(): Phaser.GameObjects.Text { return this._spectatorText; }
 
-  /** Objects that must be ignored by uiCam. */
+  /** Objects that must be ignored by uiCam (spectator text is in the game viewport). */
   get uiIgnoreObjects(): Phaser.GameObjects.GameObject[] {
-    return [this.timerText, this.scoreText, this._spectatorText];
+    return [this._spectatorText];
   }
 
   private _reposition(): void {
+    const vh = this.scene.scale.height;
     const vw = this.scene.scale.width - PANEL_WIDTH;
-    this.timerText.setX(vw - 140);
-    this.scoreText.setX(vw - 140);
+    this.timerText.setPosition(PANEL_WIDTH / 2, vh - 130);
+    this.scoreText.setPosition(PANEL_WIDTH / 2, vh - 110);
     this._spectatorText?.setX(vw / 2);
   }
 

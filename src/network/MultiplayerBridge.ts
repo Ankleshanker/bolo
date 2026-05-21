@@ -7,6 +7,7 @@ import type { BaseManager } from '../entities/BaseManager';
 import type { MineSystem } from '../entities/MineSystem';
 import type { GhostTankManager } from './GhostTankManager';
 import type { Chyron } from '../ui/Chyron';
+import { PlayerListUI } from '../ui/PlayerListUI';
 import type { SoundManager } from '../audio/SoundManager';
 import type { GameOverUI } from '../ui/GameOverUI';
 import type { MapData } from '../map/MapData';
@@ -49,6 +50,7 @@ export class MultiplayerBridge {
   private spectatorTargetIdx = 0;
   private pillPickups: { sprite: Phaser.GameObjects.Sprite; id: string }[] = [];
   private pendingPillCollects = new Set<string>();
+  private playerList?: PlayerListUI;
 
   constructor(ctx: BridgeContext) {
     this.ctx = ctx;
@@ -99,6 +101,10 @@ export class MultiplayerBridge {
       ctx.ghostManager.addGhost(id, p.name, p.color, p.teamIndex);
     }
 
+    // ── Player list (top-right of game viewport) ───────────────────────────────
+    this.playerList = new PlayerListUI(ctx.scene, ctx.uiCam);
+    this.playerList.build();
+
     // Pre-populate server snapshot with ALL objectives as neutral.
     if (net.isHost) {
       for (let i = 0; i < ctx.pillboxes.pills.length; i++) {
@@ -117,15 +123,18 @@ export class MultiplayerBridge {
         ctx.ghostManager.addGhost(d.player.playerId, d.player.name, d.player.color, d.player.teamIndex);
       }
       ctx.chyron.push(`${d.player.name} has joined the battle.`);
+      this.playerList?.refresh();
     });
 
     this._addNetHandler('playerGhosted', (d) => {
       ctx.ghostManager.setGhosted(d.playerId, true);
+      this.playerList?.refresh();
     });
 
     this._addNetHandler('playerReconnected', (d) => {
       this.playerNames.set(d.playerId, d.player.name);
       ctx.ghostManager.setGhosted(d.playerId, false);
+      this.playerList?.refresh();
     });
 
     this._addNetHandler('playerRemoved', (d) => {
@@ -133,6 +142,7 @@ export class MultiplayerBridge {
       this.playerNames.delete(d.playerId);
       ctx.ghostManager.removeGhost(d.playerId);
       ctx.chyron.push(`${name} left the battle.`);
+      this.playerList?.refresh();
     });
 
     // ── Tank positions ─────────────────────────────────────────────────────────
@@ -394,6 +404,8 @@ export class MultiplayerBridge {
       networkManager.off(event as Parameters<typeof networkManager.off>[0], fn as never);
     }
     this._netHandlers = [];
+    this.playerList?.destroy();
+    this.playerList = undefined;
   }
 
   enterSpectatorMode(): void {

@@ -72,6 +72,7 @@ export class GameScene extends Phaser.Scene {
   // HUD
   private hudText!: Phaser.GameObjects.Text;
   private resourceText!: Phaser.GameObjects.Text;
+  private hudTextVisible = true;
   private statBars!: {
     hp:     Phaser.GameObjects.Rectangle;
     shells: Phaser.GameObjects.Rectangle;
@@ -987,6 +988,10 @@ export class GameScene extends Phaser.Scene {
       trees:  makeBar('icon_wood',   3, 0x7a5230),
     };
 
+    this.input.keyboard!.on('keydown-BACKTICK', () => {
+      this.hudTextVisible = !this.hudTextVisible;
+      if (!this.dead) this.hudText.setVisible(this.hudTextVisible);
+    });
   }
 
   private readonly TERRAIN_NAMES: Record<number, string> = {
@@ -1001,7 +1006,7 @@ export class GameScene extends Phaser.Scene {
       const label = this.multiplayerMode && (this.mpBridge?.spectatorMode ?? false)
         ? `DESTROYED — respawning in ${secs}s  (Q/E to cycle views)`
         : `DESTROYED — respawning in ${secs}s`;
-      this.hudText.setText(label);
+      this.hudText.setText(label).setVisible(true);
       this.resourceText.setText('');
     } else {
       const tileVal  = this.getTileUnderTank();
@@ -1010,7 +1015,8 @@ export class GameScene extends Phaser.Scene {
       const busy     = this.builder.isBusy ? '  [soldier out]' : '';
       const action   = this.actionPanel.selectedAction;
       const pillLabel = this.tank.pillsCarried > 0 ? '  [pill]' : '';
-      this.hudText.setText(`Spd: ${spd}  Terrain: ${terrain}\nAction: ${action}${busy}${pillLabel}`);
+      this.hudText.setText(`Spd: ${spd}  Terrain: ${terrain}\nAction: ${action}${busy}${pillLabel}`)
+        .setVisible(this.hudTextVisible);
       this.resourceText.setText('');
 
       const BF = 69;

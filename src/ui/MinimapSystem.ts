@@ -84,15 +84,15 @@ export class MinimapSystem {
       this.minimapBlip.fillRect(mx - 1, my - 1, 2, 2);
     }
 
-    // Ghost dots (MP)
+    // Ghost dots (MP) — own team only
     if (multiplayerMode && this.ghostManager) {
       for (const id of this.ghostManager.getAlivePlayerIds()) {
+        if (!networkManager.isMyTeam(id)) continue;
         const sprite = this.ghostManager.getSpriteByPlayerId(id);
         if (!sprite?.visible) continue;
-        const col = networkManager.isMyTeam(id) ? 0x44ddff : 0xff6644;
         const mx = objX + (sprite.x / W) * MINI;
         const my = objY + (sprite.y / W) * MINI;
-        this.minimapBlip.fillStyle(col, 0.9);
+        this.minimapBlip.fillStyle(0x44ddff, 0.9);
         this.minimapBlip.fillCircle(mx, my, 1.5);
       }
     }
