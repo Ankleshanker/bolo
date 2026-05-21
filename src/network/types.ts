@@ -10,7 +10,8 @@ export interface BaseState { index: number; ownerId: string|null; health: number
 export interface MineState { tileX: number; tileY: number; ownerPlayerId: string; }
 export interface BoatState { tileX: number; tileY: number; }
 export interface PillPickupState { id: string; x: number; y: number; }
-export interface WorldSnapshot { terrainDiffs: TileDiff[]; pillboxStates: PillboxState[]; baseStates: BaseState[]; mines: MineState[]; boats: BoatState[]; pillPickups: PillPickupState[]; }
+export interface WallHitState { tileX: number; tileY: number; hits: number; }
+export interface WorldSnapshot { terrainDiffs: TileDiff[]; pillboxStates: PillboxState[]; baseStates: BaseState[]; mines: MineState[]; boats: BoatState[]; pillPickups: PillPickupState[]; wallHits: WallHitState[]; }
 export interface TankState { playerId: string; x: number; y: number; angle: number; alive: boolean; inForest: boolean; inBoat: boolean; health: number; shells: number; mines: number; trees: number; }
 export interface C2S_CreateRoom { roomName: string; settings: RoomSettings; name: string; color: string; }
 export interface C2S_JoinRoom { code: string; name: string; color: string; }

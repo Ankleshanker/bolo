@@ -270,12 +270,15 @@ export class GameScene extends Phaser.Scene {
           (pillIdx, px, py, ang) => {
             this.soundManager.playPillboxFire(this.soundDist(px, py));
             networkManager.sendPillboxBulletFired(pillIdx, px, py, ang);
-          });
+          },
+          (pillOwnerId, targetPlayerId) => networkManager.sameTeam(pillOwnerId, targetPlayerId));
       } else {
-        // Non-host: run AI for visual rotation only (no bullets — host broadcasts shots)
-        this.pillboxes.update(delta,
-          [{ x: this.tank.x, y: this.tank.y, hidden: inForest }],
-          null);
+        // Non-host: rotation-only pass; use full target list so friendly pills aim correctly
+        const rotTargets: import('../entities/Pillbox').PillTarget[] = [];
+        if (!this.dead) rotTargets.push({ x: this.tank.x, y: this.tank.y, hidden: inForest, playerId: networkManager.playerId });
+        for (const t of (this.ghostManager?.getAlivePillTargets() ?? [])) rotTargets.push(t);
+        this.pillboxes.update(delta, rotTargets, null, undefined,
+          (pillOwnerId, targetPlayerId) => networkManager.sameTeam(pillOwnerId, targetPlayerId));
       }
     } else {
       // Single-player: normal AI
@@ -349,6 +352,7 @@ export class GameScene extends Phaser.Scene {
       onTimerUpdate:      (r) => { this.gameTimer = r; },
       onRemoteForestChanged: (key, expiry) => { this.remoteBulletKillZones.set(key, expiry); },
       applyWallHit:          (tx, ty) => this.hitWall(tx, ty),
+      setWallHitCounts:      (data) => { this.wallHits = new Map(data.map(e => [`${e.tileX},${e.tileY}`, e.hits])); },
     });
     this.mpBridge.setup();
   }
@@ -429,8 +433,8 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private hitWall(tileX: number, tileY: number): void {
-    const tile = this.mapData.terrain[tileY]?.[tileX];
+  private hitWall(tileX: number, tileY: number, knownTile?: number): void {
+    const tile = knownTile ?? this.mapData.terrain[tileY]?.[tileX];
     const threshold = WALL_HIT_THRESHOLDS[tile];
     if (threshold === undefined) return;
     const key = `${tileX},${tileY}`;
@@ -588,7 +592,7 @@ export class GameScene extends Phaser.Scene {
       this.playerBullets.group, this.groundLayer,
       (bullet, tile) => {
         const t = tile as Phaser.Tilemaps.Tile;
-        this.hitWall(t.x, t.y);
+        this.hitWall(t.x, t.y, t.index);
         this.playerBullets.kill(bullet as Phaser.Physics.Arcade.Sprite);
         this.soundManager.playHitBuilding(this.soundDist((t.x + 0.5) * TILE_SIZE, (t.y + 0.5) * TILE_SIZE));
       },
@@ -805,8 +809,8 @@ export class GameScene extends Phaser.Scene {
 
     switch (action) {
       case 'collectTrees':
-        if (tile !== DisplayTile.Forest) return;
-        if (t.trees >= 40) return;
+        if (tile !== DisplayTile.Forest) { this.chyron.push('Target must be a forest tile.'); return; }
+        if (t.trees >= 40) { this.chyron.push('Carrying the maximum 40 wood.'); return; }
         this.dispatchSoldier(tileX, tileY, () => {
           if (this.mapData.terrain[tileY]?.[tileX] === DisplayTile.Forest) {
             this.setTile(tileX, tileY, DisplayTile.Grass);
@@ -816,15 +820,15 @@ export class GameScene extends Phaser.Scene {
         break;
 
       case 'buildRoad':
-        if (t.trees < COST_ROAD) return;
-        if (tile === DisplayTile.Sea || tile === DisplayTile.Forest) return;
+        if (t.trees < COST_ROAD) { this.chyron.push('Need 2 wood to build a road.'); return; }
+        if (tile === DisplayTile.Sea || tile === DisplayTile.Forest) { this.chyron.push('Cannot build a road here.'); return; }
         t.trees -= COST_ROAD;
         this.dispatchSoldier(tileX, tileY, () => this.setTile(tileX, tileY, DisplayTile.Road));
         break;
 
       case 'buildWall':
-        if (t.trees < COST_WALL) return;
-        if (tile === DisplayTile.Forest) return;
+        if (t.trees < COST_WALL) { this.chyron.push('Need 4 wood to build a wall.'); return; }
+        if (tile === DisplayTile.Forest) { this.chyron.push('Clear the forest first.'); return; }
         t.trees -= COST_WALL;
         if (tile === DisplayTile.Sea || tile === DisplayTile.Shallow) {
           this.dispatchSoldier(tileX, tileY, () => {
@@ -837,8 +841,9 @@ export class GameScene extends Phaser.Scene {
         break;
 
       case 'buildPillbox':
-        if (t.trees < COST_PILLBOX || t.pillsCarried < 1) return;
-        if (tile === DisplayTile.Sea || tile === DisplayTile.Wall || tile === DisplayTile.Forest) return;
+        if (t.pillsCarried < 1) { this.chyron.push('Collect a pill pickup first.'); return; }
+        if (t.trees < COST_PILLBOX) { this.chyron.push('Need 10 wood to place a pillbox.'); return; }
+        if (tile === DisplayTile.Sea || tile === DisplayTile.Wall || tile === DisplayTile.Forest) { this.chyron.push('Cannot place a pillbox on that tile.'); return; }
         t.trees -= COST_PILLBOX;
         t.pillsCarried = 0;
         this.dispatchSoldier(tileX, tileY, () => {
@@ -851,8 +856,8 @@ export class GameScene extends Phaser.Scene {
         break;
 
       case 'placeMine':
-        if (t.mines <= 0) return;
-        if (tile === DisplayTile.Sea) return;
+        if (t.mines <= 0) { this.chyron.push('No mines to place.'); return; }
+        if (tile === DisplayTile.Sea) { this.chyron.push('Cannot place a mine in the sea.'); return; }
         t.mines--;
         this.dispatchSoldier(tileX, tileY, () => {
           this.mineSystem.spawnMineSprite(tileX, tileY);
@@ -1024,6 +1029,8 @@ export class GameScene extends Phaser.Scene {
       this.statBars.shells.setSize(Math.max(0, (this.tank.shells / 200) * BF), 8);
       this.statBars.mines .setSize(Math.max(0, (this.tank.mines  / 20)  * BF), 8);
       this.statBars.trees .setSize(Math.max(0, (this.tank.trees  / 40)  * BF), 8);
+
+      this.actionPanel.update(this.tank.trees, this.tank.pillsCarried, this.tank.mines);
     }
 
     this.gameOverUI.updateTimerDisplay(this.gameTimer, this.multiplayerMode);

@@ -85,7 +85,7 @@ export class LobbyScene extends Phaser.Scene {
     friendlyFire: false,
     maxPlayers:   8,
     isPublic:     true,
-    timerSeconds: 600,
+    timerSeconds: 20 * 60,
   };
 
   // ── sort / filter state ───────────────────────────────────────────────────
@@ -1048,8 +1048,8 @@ export class LobbyScene extends Phaser.Scene {
 
     // ── Game length ────────────────────────────────────────────────────────
     this._push(this.add.text(labelX, gy, 'Game length:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
-    const durations = [5 * 60, 10 * 60, 20 * 60, 30 * 60];
-    const durLabels = ['5 min', '10 min', '20 min', '30 min'];
+    const durations = [20 * 60, 40 * 60, 60 * 60, 90 * 60];
+    const durLabels = ['20m', '40m', '60m', '90m'];
     const durBtnW = (ctrlW - 3 * 5) / 4;  // ~44px each, 5px gaps
     for (let di = 0; di < durations.length; di++) {
       const dur    = durations[di];

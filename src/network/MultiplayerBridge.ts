@@ -11,7 +11,7 @@ import { PlayerListUI } from '../ui/PlayerListUI';
 import type { SoundManager } from '../audio/SoundManager';
 import type { GameOverUI } from '../ui/GameOverUI';
 import type { MapData } from '../map/MapData';
-import type { S2C_GameStart, S2C_StateSnapshot } from './types';
+import type { S2C_GameStart, S2C_StateSnapshot, WallHitState } from './types';
 import { DisplayTile } from '../map/TileTypes';
 import { PANEL_WIDTH } from '../ui/ActionPanel';
 
@@ -39,6 +39,7 @@ export interface BridgeContext {
   onTimerUpdate: (remaining: number) => void;
   onRemoteForestChanged: (key: string, expiry: number) => void;
   applyWallHit: (tx: number, ty: number) => void;
+  setWallHitCounts: (data: WallHitState[]) => void;
 }
 
 export class MultiplayerBridge {
@@ -172,7 +173,8 @@ export class MultiplayerBridge {
       let pill = ctx.pillboxes.pills[d.index];
       // Player-placed pills arrive with position data; create the sprite if we haven't seen this index
       if (!pill && d.alive && d.tileX != null && d.tileY != null) {
-        pill = ctx.pillboxes.addPill(d.tileX, d.tileY, d.ownerId);
+        const color = d.ownerId ? networkManager.getPlayerColor(d.ownerId) : undefined;
+        pill = ctx.pillboxes.addPill(d.tileX, d.tileY, d.ownerId, color);
         if (!networkManager.isHost) ctx.chyron.push('A pillbox was placed.');
       }
       if (!pill) return;
@@ -183,7 +185,8 @@ export class MultiplayerBridge {
       } else {
         const owner = d.ownerId === null ? 'neutral'
           : net.isMyTeam(d.ownerId) ? 'friendly' : 'enemy';
-        if (pill.owner !== owner || !pill.alive) pill.capture(owner);
+        const color = owner === 'friendly' && d.ownerId ? networkManager.getPlayerColor(d.ownerId) : undefined;
+        if (pill.owner !== owner || !pill.alive) pill.capture(owner, color);
         pill.health = d.health;
       }
     });
@@ -311,11 +314,15 @@ export class MultiplayerBridge {
       ctx.setTile(diff.tileX, diff.tileY, diff.displayTile, false);
     }
 
+    // Wall hit progress
+    ctx.setWallHitCounts(snap.wallHits ?? []);
+
     // Pillbox states
     for (const ps of snap.pillboxStates) {
       let pill = ctx.pillboxes.pills[ps.index];
       if (!pill && ps.alive && ps.tileX != null && ps.tileY != null) {
-        pill = ctx.pillboxes.addPill(ps.tileX, ps.tileY, ps.ownerId);
+        const color = ps.ownerId ? networkManager.getPlayerColor(ps.ownerId) : undefined;
+        pill = ctx.pillboxes.addPill(ps.tileX, ps.tileY, ps.ownerId, color);
       }
       if (!pill) continue;
       pill.ownerId = ps.ownerId;
@@ -324,7 +331,8 @@ export class MultiplayerBridge {
       } else {
         const owner = ps.ownerId === null ? 'neutral'
           : networkManager.isMyTeam(ps.ownerId) ? 'friendly' : 'enemy';
-        if (pill.owner !== owner || !pill.alive) pill.capture(owner);
+        const color = owner === 'friendly' && ps.ownerId ? networkManager.getPlayerColor(ps.ownerId) : undefined;
+        if (pill.owner !== owner || !pill.alive) pill.capture(owner, color);
         pill.health = ps.health;
       }
     }

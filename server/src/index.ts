@@ -312,6 +312,7 @@ io.on('connection', (socket) => {
   socket.on('wallHit', (data: C2S_WallHit) => {
     const room = lobbyManager.getRoomBySocketId(socket.id);
     if (!room || room.state !== 'PLAYING') return;
+    room.updateWallHit(data.tileX, data.tileY);
     socket.to(room.roomId).emit('wallHit', data);
   });
 

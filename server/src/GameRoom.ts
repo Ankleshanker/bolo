@@ -1,7 +1,7 @@
 import type { Server } from 'socket.io';
 import type {
   RoomSettings, RoomState, PlayerInfo, RoomSummary,
-  TankState, TileDiff, PillboxState, BaseState, MineState, BoatState, PillPickupState,
+  TankState, TileDiff, PillboxState, BaseState, MineState, BoatState, PillPickupState, WallHitState,
   S2C_GameStart, S2C_GameOver, S2C_StateSnapshot, S2C_TimeUpdate, S2C_PlayerKill,
 } from './types.js';
 
@@ -30,6 +30,7 @@ export class GameRoom {
     mines:         [] as MineState[],
     boats:         [] as BoatState[],
     pillPickups:   [] as PillPickupState[],
+    wallHits:      [] as WallHitState[],
   };
 
   timerMs         = 0;
@@ -302,12 +303,22 @@ export class GameRoom {
     const i = this.snapshot.terrainDiffs.findIndex(d => d.tileX === diff.tileX && d.tileY === diff.tileY);
     if (i >= 0) this.snapshot.terrainDiffs[i] = diff;
     else         this.snapshot.terrainDiffs.push(diff);
-    // A tile change means a boat at this position (if any) is gone.
     this.removeBoatAt(diff.tileX, diff.tileY);
+    this.removeWallHitAt(diff.tileX, diff.tileY);
   }
 
   removeBoatAt(tileX: number, tileY: number): void {
     this.snapshot.boats = this.snapshot.boats.filter(b => !(b.tileX === tileX && b.tileY === tileY));
+  }
+
+  updateWallHit(tileX: number, tileY: number): void {
+    const i = this.snapshot.wallHits.findIndex(w => w.tileX === tileX && w.tileY === tileY);
+    if (i >= 0) this.snapshot.wallHits[i].hits++;
+    else         this.snapshot.wallHits.push({ tileX, tileY, hits: 1 });
+  }
+
+  removeWallHitAt(tileX: number, tileY: number): void {
+    this.snapshot.wallHits = this.snapshot.wallHits.filter(w => !(w.tileX === tileX && w.tileY === tileY));
   }
 
   addPillPickup(state: PillPickupState): void {

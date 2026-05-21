@@ -34,7 +34,7 @@ export class Pillbox {
   private facing   = 0;
   private cooldown = 0;
 
-  constructor(scene: Phaser.Scene, info: PillInfo, owner: PillOwner, group: Phaser.Physics.Arcade.Group) {
+  constructor(scene: Phaser.Scene, info: PillInfo, owner: PillOwner, group: Phaser.Physics.Arcade.Group, teamColor?: number) {
     this.owner  = owner;
     this.health = MAX_HEALTH;
 
@@ -44,7 +44,7 @@ export class Pillbox {
       `pill_${owner}`,
     ) as Phaser.Physics.Arcade.Sprite;
 
-    if (owner === 'friendly') this.applyTeamTint();
+    if (owner === 'friendly') this.applyTeamTint(teamColor);
     this.sprite.setDepth(3);
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.setImmovable(true);
@@ -75,21 +75,26 @@ export class Pillbox {
     return !this.alive;
   }
 
-  capture(newOwner: PillOwner) {
+  capture(newOwner: PillOwner, teamColor?: number) {
     this.owner  = newOwner;
     this.health = MAX_HEALTH;
     this.alive  = true;
     this.sprite.setTexture(`pill_${newOwner}`);
-    if (newOwner === 'friendly') this.applyTeamTint();
+    if (newOwner === 'friendly') this.applyTeamTint(teamColor);
     else this.sprite.clearTint();
     this.sprite.setActive(true).setVisible(true);
     this.crackSprite.setAlpha(0).setVisible(true);
     (this.sprite.body as Phaser.Physics.Arcade.Body).enable = true;
   }
 
-  private applyTeamTint() {
-    const stored = localStorage.getItem(STORAGE_COLOR);
-    const color  = stored ? parseInt(stored, 16) : 0xffffff;
+  private applyTeamTint(teamColor?: number) {
+    let color: number;
+    if (teamColor !== undefined) {
+      color = teamColor;
+    } else {
+      const stored = localStorage.getItem(STORAGE_COLOR);
+      color = stored ? parseInt(stored, 16) : 0xffffff;
+    }
     this.sprite.setTint(color);
   }
 
@@ -179,9 +184,9 @@ export class PillboxManager {
     }
   }
 
-  addPill(tileX: number, tileY: number, ownerId: string | null = null): Pillbox {
+  addPill(tileX: number, tileY: number, ownerId: string | null = null, teamColor?: number): Pillbox {
     const info: PillInfo = { x: tileX, y: tileY, owner: 0x00, armour: 15, speed: 4 };
-    const pill = new Pillbox(this.scene, info, 'friendly', this.group);
+    const pill = new Pillbox(this.scene, info, 'friendly', this.group, teamColor);
     pill.ownerId = ownerId;
     this.pills.push(pill);
     return pill;

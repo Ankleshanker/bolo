@@ -86,6 +86,8 @@ export interface PillPickupState {
   y:  number;
 }
 
+export interface WallHitState { tileX: number; tileY: number; hits: number; }
+
 export interface WorldSnapshot {
   terrainDiffs:  TileDiff[];
   pillboxStates: PillboxState[];
@@ -93,6 +95,7 @@ export interface WorldSnapshot {
   mines:         MineState[];
   boats:         BoatState[];
   pillPickups:   PillPickupState[];
+  wallHits:      WallHitState[];
 }
 
 // ─── Tank state (sent 20 Hz client → server → all other clients) ──────────────

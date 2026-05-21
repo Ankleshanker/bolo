@@ -26,6 +26,8 @@ const BTN_PAD = 6;
 export class ActionPanel {
   private selected: BuildAction = 'collectTrees';
   private bgs: Map<BuildAction, Phaser.GameObjects.Rectangle> = new Map();
+  private costTexts: Map<BuildAction, Phaser.GameObjects.Text> = new Map();
+  private availability: Map<BuildAction, boolean> = new Map();
   readonly gameObjects: Phaser.GameObjects.GameObject[] = [];
 
   constructor(scene: Phaser.Scene) {
@@ -66,8 +68,9 @@ export class ActionPanel {
       }).setDepth(22).setOrigin(0.5, 0.5));
 
       if (cost) {
-        push(scene.add.text(PANEL_WIDTH / 2, cy + 28, cost, costStyle)
+        const costText = push(scene.add.text(PANEL_WIDTH / 2, cy + 28, cost, costStyle)
           .setDepth(22).setOrigin(0.5, 0.5));
+        this.costTexts.set(key, costText as Phaser.GameObjects.Text);
       }
 
       push(scene.add.text(PANEL_WIDTH / 2, cy + 38, `[${hotkey}]`, hotkeyStyle)
@@ -91,7 +94,30 @@ export class ActionPanel {
     for (const [k] of this.bgs) this.refreshColor(k);
   }
 
+  /** Call each frame with current resource counts to keep button states fresh. */
+  update(trees: number, pillsCarried: number, mines: number) {
+    const checks: [BuildAction, boolean][] = [
+      ['buildRoad',    trees >= 2],
+      ['buildWall',    trees >= 4],
+      ['buildPillbox', trees >= 10 && pillsCarried >= 1],
+      ['placeMine',    mines >= 1],
+    ];
+    for (const [action, ok] of checks) {
+      if (this.availability.get(action) !== ok) {
+        this.availability.set(action, ok);
+        this.costTexts.get(action)?.setColor(ok ? '#aaaacc' : '#cc4444');
+        this.refreshColor(action);
+      }
+    }
+  }
+
   private refreshColor(key: BuildAction) {
-    this.bgs.get(key)?.setFillStyle(key === this.selected ? 0x2a5c1a : 0x1e2e44);
+    const available = this.availability.get(key) ?? true;
+    const isSelected = key === this.selected;
+    if (isSelected) {
+      this.bgs.get(key)?.setFillStyle(0x2a5c1a).setAlpha(1);
+    } else {
+      this.bgs.get(key)?.setFillStyle(0x1e2e44).setAlpha(available ? 1 : 0.55);
+    }
   }
 }
