@@ -72,7 +72,7 @@ export class GameScene extends Phaser.Scene {
   // HUD
   private hudText!: Phaser.GameObjects.Text;
   private resourceText!: Phaser.GameObjects.Text;
-  private hudTextVisible = true;
+  private hudTextVisible = false;
   private statBars!: {
     hp:     Phaser.GameObjects.Rectangle;
     shells: Phaser.GameObjects.Rectangle;
