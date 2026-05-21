@@ -959,7 +959,7 @@ export class LobbyScene extends Phaser.Scene {
     const nameBox = this._push(this.add.rectangle(ctrlX + ctrlW / 2, gy, ctrlW, 26, 0x08121e)
       .setStrokeStyle(1, this.nameInputFocused ? C.border : 0x2244aa)
       .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => { this.nameInputFocused = true; this._renderCreate(); })
+      .on('pointerdown', () => { this.nameInputFocused = true; this.playerNameFocused = false; this._renderCreate(); })
     );
     void nameBox;
     this._push(this.add.text(ctrlX + ctrlW / 2, gy,
