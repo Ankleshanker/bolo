@@ -104,6 +104,7 @@ sendPillboxBulletFired(pillIndex, x, y, ang) // host only — relayed to non-hos
 sendPillboxFire(pillIndex, angleDeg)         // host only — relayed to non-hosts
 sendPillPickupSpawned(id, x, y)              // destroyer emits; server stores + relays to others
 sendPillPickupCollected(id)                  // collector candidate; server first-come guard, then broadcasts
+sendWallHit(tileX, tileY)                    // intermediate hit below transition threshold; not stored in snapshot
 sendRequestSnapshot()                        // called once at end of setupMultiplayer()
 ```
 
@@ -199,6 +200,7 @@ States: `LOBBY → PLAYING → ENDED`
 | `boatAdded` | `{ tileX, tileY }` | Relayed + stored in snapshot |
 | `pillPickupSpawned` | `{ id, x, y }` | Destroyer emits; stored in snapshot; relayed to all **others** (destroyer already spawned locally) |
 | `pillPickupCollected` | `{ id }` | Collector candidate; server removes from snapshot if present (first-come), broadcasts `S2C_PillPickupCollected` to room; silently dropped if already gone |
+| `wallHit` | `{ tileX, tileY }` | Intermediate wall hit (below transition threshold); relayed to all **others**; not stored in snapshot — late joiners see 0 progress |
 | `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Host only; server relays to all other clients |
 | `pillboxFire` | `{ pillIndex, angleDeg }` | Host only; server relays to all other clients |
 | `soldierState` | `{ x, y, active }` | Volatile; server relays with `playerId` appended |
@@ -231,6 +233,7 @@ States: `LOBBY → PLAYING → ENDED`
 | `boatAdded` | `{ tileX, tileY }` | |
 | `pillPickupSpawned` | `{ id, x, y }` | Relayed to all clients except the destroyer |
 | `pillPickupCollected` | `{ id, collectorId }` | Broadcast to all clients including collector; collector sets `tank.pillsCarried = 1` |
+| `wallHit` | `{ tileX, tileY }` | Relayed to all clients except the shooter; increments that client's local `wallHits` counter |
 | `timeUpdate` | `{ remaining: number }` | ms remaining; drives client timer in MP |
 | `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Relayed from host to all other clients |
 | `pillboxFire` | `{ pillIndex, angleDeg }` | Relayed from host to all other clients |

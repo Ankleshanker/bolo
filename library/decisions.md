@@ -72,7 +72,7 @@
 **Decision:** `DisplayTile.Mountain = 10` is a separate constant (not Wall). It is in `COLLISION_TILES` but NOT in `WALL_DAMAGE_CHAIN`. `ROAD_VARIANT_BASE` shifted from 10 → 11; `NUM_DISPLAY_TILES` bumped to 27.
 **Why:** Mountain is impassable and indestructible — bullets die on contact without any tile degradation. Using Wall (8) would put it in the damage chain (Wall → DamagedWall → Rubble → Crater), making mountains gradually destructible. The separate constant keeps the invariant explicit and prevents accidental inclusion in future damage logic.
 **Alternatives rejected:** Reusing Wall tile — silently erodes mountains via bullet damage. DamagedWall as "cracked mountain" — wrong semantic; mountain should be indestructible at any armor level.
-**Applies to:** `src/map/TileTypes.ts`, `src/scenes/GameScene.ts` (`WALL_DAMAGE_CHAIN`), `src/scenes/BootScene.ts`.
+**Applies to:** `src/map/TileTypes.ts`, `src/scenes/GameScene.ts` (`WALL_HIT_THRESHOLDS`), `src/scenes/BootScene.ts`.
 
 ---
 
@@ -177,6 +177,15 @@
 **Why:** The primary use-case for showing private rooms is activity visibility (see who is playing). Hiding them entirely would make the list useless for that purpose. Enforcing access at the join level would be a meaningful security feature requiring server-side secret storage — a deliberate future decision, not a default. The client-side prompt is a reasonable middle ground: it deters accidental joins while keeping the implementation trivial.
 **Critical:** Do not add `if (!room.settings.isPublic) return;` to the `joinRoom` handler thinking you're "fixing" an oversight. That would break late-join for private rooms and contradict the design above. If real access control is desired, the correct design is: the host sets a hashed password on room creation, the `joinRoom` payload includes the plaintext, and the server checks the hash. The list can still show the room.
 **Applies to:** `server/src/LobbyManager.ts` (`listAllActiveRooms`), `server/src/index.ts` (`joinRoom` handler), `src/scenes/LobbyScene.ts` (`_renderMultiBrowse`, `_renderPrivatePrompt`, `_submitPrivateCode`).
+
+---
+
+## Wall durability uses a hit counter, not a single-step tile lookup — 2026-05-21
+
+**Decision:** Wall destruction is tracked via `WALL_HIT_THRESHOLDS` (a per-tile-type `{ hitsNeeded, nextTile }` map) plus a `wallHits: Map<string, number>` counter in `GameScene`. Walls require 10 cumulative player-bullet hits to reach Crater (5 → DamagedWall, 3 more → Rubble, 2 more → Crater). In multiplayer, intermediate hits are broadcast as `wallHit` events so all clients share progress; tile transitions continue via `tileChanged`. `setTile()` always clears the counter for the changed position so remote syncs reset local progress.
+**Why:** The original single-step `WALL_DAMAGE_CHAIN = { 8: 9, 9: 6, 6: 3 }` made walls trivially fragile — 3 bullets destroyed any wall. The hit counter lets the existing three visual states (Wall, DamagedWall, Rubble) provide meaningful feedback across 10 hits without adding new tile types or tileset frames.
+**Do not simplify back to a single-step lookup** — that undoes the intentional durability design.
+**Applies to:** `src/scenes/GameScene.ts` (`WALL_HIT_THRESHOLDS`, `hitWall`, `setTile`, `wallHits`), `src/network/NetworkManager.ts` (`sendWallHit`), `src/network/MultiplayerBridge.ts` (`wallHit` handler), `server/src/index.ts` (`wallHit` relay).
 
 ---
 
