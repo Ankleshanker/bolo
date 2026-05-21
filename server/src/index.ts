@@ -12,7 +12,7 @@ import type {
   C2S_PillboxBulletFired,
   C2S_SoldierState,
   C2S_TankPush,
-  C2S_PillPickupSpawned, C2S_PillPickupCollected,
+  C2S_PillPickupSpawned, C2S_PillPickupCollected, C2S_WallHit,
   S2C_PillPickupSpawned, S2C_PillPickupCollected,
   PillPickupState,
   TankState,
@@ -307,6 +307,12 @@ io.on('connection', (socket) => {
     room.updateTileChanged(data);
     const payload: S2C_TileChanged = { ...data, playerId };
     socket.to(room.roomId).emit('tileChanged', payload);
+  });
+
+  socket.on('wallHit', (data: C2S_WallHit) => {
+    const room = lobbyManager.getRoomBySocketId(socket.id);
+    if (!room || room.state !== 'PLAYING') return;
+    socket.to(room.roomId).emit('wallHit', data);
   });
 
   socket.on('pillboxUpdate', (data: C2S_PillboxUpdate) => {

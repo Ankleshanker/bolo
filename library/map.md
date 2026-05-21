@@ -123,13 +123,17 @@ Bypassing `setTile` with a direct `putTileAt` will desync `mapData.terrain` from
 
 ## Wall Damage Chain
 
-Player bullets hitting wall tiles trigger progressive degradation:
+Player bullets hitting wall tiles trigger progressive degradation over **10 cumulative hits**:
 
 ```
-Wall (8) → DamagedWall (9) → Rubble (6) → Crater (3)
+Wall (8) —5 hits→ DamagedWall (9) —3 more→ Rubble (6) —2 more→ Crater (3)
 ```
 
-Defined as `WALL_DAMAGE_CHAIN: Record<number, number>` in `GameScene`. Pillbox bullets don't damage terrain.
+Defined as `WALL_HIT_THRESHOLDS: Record<number, { hitsNeeded: number; nextTile: number }>` in `GameScene`. Hit progress is tracked per tile position in `wallHits: Map<string, number>` (key `"tileX,tileY"`). `setTile()` clears any counter entry for the changed position, so remote tile-sync events always reset local hit progress.
+
+In multiplayer, intermediate hits (below a transition threshold) are broadcast as `wallHit` events so all clients share cumulative progress. Tile transitions continue to broadcast via `tileChanged` as before.
+
+Pillbox bullets don't damage terrain.
 
 ---
 

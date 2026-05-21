@@ -199,7 +199,7 @@ Object pool of `Phaser.Physics.Arcade.Sprite` (`'bullet'`). Instances in GameSce
 
 | Source | Target | Effect |
 |---|---|---|
-| `playerBullets` | `groundLayer` | Apply `WALL_DAMAGE_CHAIN` to tile; kill bullet |
+| `playerBullets` | `groundLayer` | Apply `WALL_HIT_THRESHOLDS` counter to tile (10 hits to destroy); kill bullet |
 | `playerBullets` | `pillboxes.group` | Damage pillbox; kill bullet; broadcast in MP |
 | `playerBullets` | `ghostManager.group` (MP) | Kill bullet; `sendBulletHit(targetId, 1)`; play hit sound |
 | `pillboxBullets` | `groundLayer` | Kill bullet (no terrain damage) |

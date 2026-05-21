@@ -24,7 +24,11 @@ import { MultiplayerBridge } from '../network/MultiplayerBridge';
 import type { S2C_GameStart } from '../network/types.ts';
 import type { MapData } from '../map/MapData';
 
-const WALL_DAMAGE_CHAIN: Record<number, number> = { 8: 9, 9: 6, 6: 3 };
+const WALL_HIT_THRESHOLDS: Record<number, { hitsNeeded: number; nextTile: number }> = {
+  8: { hitsNeeded: 5, nextTile: 9 },
+  9: { hitsNeeded: 3, nextTile: 6 },
+  6: { hitsNeeded: 2, nextTile: 3 },
+};
 const GAME_DURATION_MS = 5 * 60 * 1000;
 
 const COST_ROAD    = 2;
@@ -100,6 +104,7 @@ export class GameScene extends Phaser.Scene {
   private chyron!: Chyron;
   private _tankPushCooldowns = new Map<string, number>();
   private mpBridge: MultiplayerBridge | null = null;
+  private wallHits = new Map<string, number>();
 
   constructor() {
     super({ key: 'GameScene' });
@@ -113,6 +118,7 @@ export class GameScene extends Phaser.Scene {
     this.mpSendAccum     = 0;
     this._mineDropTileX  = -1;
     this._mineDropTileY  = -1;
+    this.wallHits        = new Map();
   }
 
   create() {
@@ -341,6 +347,7 @@ export class GameScene extends Phaser.Scene {
       onTankKilled:       () => this.onTankKilled(),
       onTimerUpdate:      (r) => { this.gameTimer = r; },
       onRemoteForestChanged: (key, expiry) => { this.remoteBulletKillZones.set(key, expiry); },
+      applyWallHit:          (tx, ty) => this.hitWall(tx, ty),
     });
     this.mpBridge.setup();
   }
@@ -400,6 +407,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setTile(tileX: number, tileY: number, displayTile: number, broadcast = true) {
+    this.wallHits.delete(`${tileX},${tileY}`);
     const wasRoad = this.mapData.terrain[tileY]?.[tileX] === DisplayTile.Road;
     if (this.mapData.terrain[tileY]) this.mapData.terrain[tileY][tileX] = displayTile;
 
@@ -417,6 +425,21 @@ export class GameScene extends Phaser.Scene {
 
     if (this.multiplayerMode && broadcast) {
       networkManager.sendTileChanged(tileX, tileY, displayTile);
+    }
+  }
+
+  private hitWall(tileX: number, tileY: number): void {
+    const tile = this.mapData.terrain[tileY]?.[tileX];
+    const threshold = WALL_HIT_THRESHOLDS[tile];
+    if (threshold === undefined) return;
+    const key = `${tileX},${tileY}`;
+    const hits = (this.wallHits.get(key) ?? 0) + 1;
+    if (hits >= threshold.hitsNeeded) {
+      this.wallHits.delete(key);
+      this.setTile(tileX, tileY, threshold.nextTile);
+    } else {
+      this.wallHits.set(key, hits);
+      if (this.multiplayerMode) networkManager.sendWallHit(tileX, tileY);
     }
   }
 
@@ -564,8 +587,7 @@ export class GameScene extends Phaser.Scene {
       this.playerBullets.group, this.groundLayer,
       (bullet, tile) => {
         const t = tile as Phaser.Tilemaps.Tile;
-        const next = WALL_DAMAGE_CHAIN[t.index];
-        if (next !== undefined) this.setTile(t.x, t.y, next);
+        this.hitWall(t.x, t.y);
         this.playerBullets.kill(bullet as Phaser.Physics.Arcade.Sprite);
         this.soundManager.playHitBuilding(this.soundDist((t.x + 0.5) * TILE_SIZE, (t.y + 0.5) * TILE_SIZE));
       },

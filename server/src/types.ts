@@ -341,3 +341,5 @@ export interface C2S_PillPickupSpawned  { id: string; x: number; y: number; }
 export interface S2C_PillPickupSpawned  { id: string; x: number; y: number; }
 export interface C2S_PillPickupCollected { id: string; }
 export interface S2C_PillPickupCollected { id: string; collectorId: string; }
+export interface C2S_WallHit { tileX: number; tileY: number; }
+export interface S2C_WallHit { tileX: number; tileY: number; }

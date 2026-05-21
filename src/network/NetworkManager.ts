@@ -32,6 +32,7 @@ import type {
   S2C_TankPush,
   S2C_PillPickupSpawned,
   S2C_PillPickupCollected,
+  S2C_WallHit,
 } from './types.ts';
 
 // ---------------------------------------------------------------------------
@@ -67,6 +68,7 @@ export type NetEvents = {
   tankPush:             S2C_TankPush;
   pillPickupSpawned:   S2C_PillPickupSpawned;
   pillPickupCollected: S2C_PillPickupCollected;
+  wallHit:             S2C_WallHit;
   kicked:               void;
   error:                { message: string };
 };
@@ -109,6 +111,7 @@ function makeListenerMap(): ListenerMap {
     tankPush:            new Set(),
     pillPickupSpawned:   new Set(),
     pillPickupCollected: new Set(),
+    wallHit:             new Set(),
     kicked:              new Set(),
     error:               new Set(),
   };
@@ -125,7 +128,7 @@ const SERVER_EVENTS: (keyof NetEvents)[] = [
   'tileChanged', 'pillboxUpdate', 'baseUpdate', 'mineAdded', 'mineDetonated',
   'boatAdded', 'timeUpdate', 'playerKill', 'gameOver', 'pillboxBulletFired',
   'soldierState', 'pillboxFire', 'tankPush',
-  'pillPickupSpawned', 'pillPickupCollected',
+  'pillPickupSpawned', 'pillPickupCollected', 'wallHit',
   'kicked', 'error',
 ];
 
@@ -310,6 +313,10 @@ export class NetworkManager {
 
   sendPillPickupCollected(id: string): void {
     this.socket?.emit('pillPickupCollected', { id });
+  }
+
+  sendWallHit(tileX: number, tileY: number): void {
+    this.socket?.emit('wallHit', { tileX, tileY });
   }
 
   returnToLobby(): void {

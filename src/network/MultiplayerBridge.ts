@@ -37,6 +37,7 @@ export interface BridgeContext {
   onTankKilled: () => void;
   onTimerUpdate: (remaining: number) => void;
   onRemoteForestChanged: (key: string, expiry: number) => void;
+  applyWallHit: (tx: number, ty: number) => void;
 }
 
 export class MultiplayerBridge {
@@ -151,6 +152,10 @@ export class MultiplayerBridge {
         ctx.onRemoteForestChanged(`${d.tileX},${d.tileY}`, Date.now() + 500);
       }
       ctx.setTile(d.tileX, d.tileY, d.displayTile, false);
+    });
+
+    this._addNetHandler('wallHit', (d) => {
+      ctx.applyWallHit(d.tileX, d.tileY);
     });
 
     this._addNetHandler('pillboxUpdate', (d) => {
