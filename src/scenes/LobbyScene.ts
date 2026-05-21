@@ -906,28 +906,33 @@ export class LobbyScene extends Phaser.Scene {
     const { cx, H } = this;
 
     // ── Layout constants ───────────────────────────────────────────────────
-    const formW    = 330;
-    const labelW   = 115;
-    const ctrlW    = 195;
-    const formLeft = cx - formW / 2;          // cx - 165
-    const labelX   = formLeft + 10;           // cx - 155, left edge of all labels
-    const ctrlX    = formLeft + labelW + 10;  // cx - 40,  left edge of all controls
-    const ctrlCx   = ctrlX + ctrlW / 2;      // cx + 57.5, center of controls column
+    const formW    = 380;
+    const labelW   = 110;
+    const ctrlW    = 250;
+    const formLeft = cx - formW / 2;          // cx - 190
+    const labelX   = formLeft + 10;           // cx - 180, left edge of all labels
+    const ctrlX    = formLeft + labelW + 10;  // cx - 60,  left edge of all controls
 
-    const topY = H * 0.34;
-    const titleY = topY - 10;
-    let gy = topY + 22;
+    const topY  = H * 0.34;
+    const titleY = topY;
+    let gy = titleY + 26;
     const rowH = 30;
 
     // ── Background card (drawn first, behind everything) ───────────────────
-    // Height is estimated; we draw it before knowing gy's final value,
-    // so use a fixed height that comfortably contains all rows + buttons.
-    const cardH = rowH * 9 + 130;
-    this._push(this.add.rectangle(cx, titleY + cardH / 2 - 4, formW, cardH, 0x081424)
+    // 18px above title, fixed height to cover 10 rows + buttons.
+    const cardTopPad = 18;
+    const cardH      = rowH * 10 + 148;
+    this._push(this.add.rectangle(cx, titleY - cardTopPad + cardH / 2, formW, cardH, 0x081424)
       .setStrokeStyle(1, C.borderDim));
 
     // Title
     this._push(this.add.text(cx, titleY, 'CREATE ROOM', { fontSize: '15px', color: C.textDim, letterSpacing: 3 }).setOrigin(0.5));
+
+    // ── Player name (read-only) ────────────────────────────────────────────
+    const playerName = localStorage.getItem(STORAGE_NAME) ?? 'Unknown';
+    this._push(this.add.text(labelX, gy, 'Player:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    this._push(this.add.text(ctrlX, gy, playerName, { fontSize: '13px', color: C.white }).setOrigin(0, 0.5));
+    gy += rowH;
 
     // ── Room name ──────────────────────────────────────────────────────────
     this._push(this.add.text(labelX, gy, 'Room name:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
@@ -944,8 +949,7 @@ export class LobbyScene extends Phaser.Scene {
 
     // ── Map type ───────────────────────────────────────────────────────────
     this._push(this.add.text(labelX, gy, 'Map:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
-    // Two equal buttons side-by-side filling the controls column
-    const mapBtnW = (ctrlW - 6) / 2;  // ~94px each, 6px gap
+    const mapBtnW = (ctrlW - 6) / 2;  // ~122px each, 6px gap
     const mapProcBtn = this._push(this.add.rectangle(ctrlX + mapBtnW / 2, gy, mapBtnW, 22,
       this.createSettings.mapType === 'procedural' ? C.panelHi : C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
@@ -968,17 +972,17 @@ export class LobbyScene extends Phaser.Scene {
         .setStrokeStyle(1, 0x336633).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => this._triggerMapUpload())
       );
-      this._push(this.add.text(ctrlX + ctrlW / 2, gy, fname.length > 22 ? fname.slice(0, 20) + '…' : fname, {
+      this._push(this.add.text(ctrlX + ctrlW / 2, gy, fname.length > 26 ? fname.slice(0, 24) + '…' : fname, {
         fontSize: '13px', color: fname === 'No file chosen' ? '#334455' : '#88ffaa',
       }).setOrigin(0.5));
       void fpBtn;
       gy += rowH;
     }
 
-    // ── Team mode ──────────────────────────────────────────────────────────
+    // ── Team mode — 80px buttons, full labels ──────────────────────────────
     this._push(this.add.text(labelX, gy, 'Teams:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const teamModes: Array<RoomSettings['teamMode']> = ['ffa', '2team', '4team'];
-    const tmBtnW = (ctrlW - 2 * 5) / 3;  // ~61px each, 5px gaps
+    const tmBtnW = (ctrlW - 2 * 5) / 3;  // 80px each, 5px gaps
     for (let i = 0; i < teamModes.length; i++) {
       const tm     = teamModes[i];
       const active = this.createSettings.teamMode === tm;
@@ -987,12 +991,12 @@ export class LobbyScene extends Phaser.Scene {
         .setStrokeStyle(1, active ? C.border : C.borderDim).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => { this.createSettings.teamMode = tm; this._renderCreate(); })
       );
-      this._push(this.add.text(bx, gy, TEAM_MODE_SHORT[tm], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
+      this._push(this.add.text(bx, gy, TEAM_MODE_LABELS[tm], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
       void btn;
     }
     gy += rowH;
 
-    // ── Win condition ──────────────────────────────────────────────────────
+    // ── Win condition — 80px buttons, full labels ──────────────────────────
     this._push(this.add.text(labelX, gy, 'Win:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const winConds: Array<RoomSettings['winCondition']> = ['timer', 'domination', 'deathmatch'];
     for (let i = 0; i < winConds.length; i++) {
@@ -1003,7 +1007,7 @@ export class LobbyScene extends Phaser.Scene {
         .setStrokeStyle(1, active ? C.border : C.borderDim).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => { this.createSettings.winCondition = wc; this._renderCreate(); })
       );
-      this._push(this.add.text(bx, gy, WIN_COND_SHORT[wc], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
+      this._push(this.add.text(bx, gy, WIN_COND_LABELS[wc].split(' ')[0], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
       void btn;
     }
     gy += rowH;
@@ -1050,7 +1054,7 @@ export class LobbyScene extends Phaser.Scene {
     this._push(this.add.text(labelX, gy, 'Game length:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const durations = [20 * 60, 40 * 60, 60 * 60, 90 * 60];
     const durLabels = ['20m', '40m', '60m', '90m'];
-    const durBtnW = (ctrlW - 3 * 5) / 4;  // ~44px each, 5px gaps
+    const durBtnW = (ctrlW - 3 * 5) / 4;  // ~58px each, 5px gaps
     for (let di = 0; di < durations.length; di++) {
       const dur    = durations[di];
       const active = this.createSettings.timerSeconds === dur;
@@ -1081,7 +1085,6 @@ export class LobbyScene extends Phaser.Scene {
       .on('pointerout',  () => (backBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panel))
     );
     this._push(this.add.text(cx, gy + 50, '← Back', { fontSize: '14px', color: C.textGrey }).setOrigin(0.5));
-    void ctrlCx;
   }
 
   private _createRoom() {
