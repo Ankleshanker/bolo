@@ -3,12 +3,14 @@ import { networkManager } from '../network/NetworkManager';
 import type { PlayerInfo } from '../network/types';
 import { PANEL_WIDTH } from './ActionPanel';
 
-const TEAM_COLORS = ['#4488ff', '#ff6644', '#44dd88', '#ffdd44'];
-const LIST_W      = 128;
-const DEPTH       = 31;
-const MARGIN      = 8;
-const ROW_H       = 18;
-const HEADER_H    = 22;
+const TEAM_COLORS   = ['#4488ff', '#ff6644', '#44dd88', '#ffdd44'];
+const LIST_W        = 128;
+const DEPTH         = 31;
+const ROW_H         = 18;
+const HEADER_H      = 22;
+const TEAM_HEADER_H = 20;
+const MINIMAP_H     = 128; // must match MinimapSystem.MINI
+const MINIMAP_GAP   = 4;   // gutter used by MinimapSystem._objY()
 
 export class PlayerListUI {
   private readonly scene: Phaser.Scene;
@@ -38,11 +40,34 @@ export class PlayerListUI {
     this.objs = [];
   }
 
+  /** Total pixel height the list will occupy (used to anchor bottom to minimap top). */
+  private _calcHeight(): number {
+    const players  = networkManager.players;
+    const teamMode = networkManager.settings?.teamMode ?? 'ffa';
+    let h = HEADER_H;
+    if (!this._collapsed) {
+      if (teamMode === 'ffa') {
+        h += players.size * ROW_H;
+      } else {
+        const teamCount = teamMode === '2team' ? 2 : 4;
+        const counts = new Array<number>(teamCount).fill(0);
+        for (const [, info] of players) {
+          if (info.teamIndex >= 0 && info.teamIndex < teamCount) counts[info.teamIndex]++;
+        }
+        for (let ti = 0; ti < teamCount; ti++) {
+          if (counts[ti] > 0) h += TEAM_HEADER_H + counts[ti] * ROW_H;
+        }
+      }
+    }
+    return h;
+  }
+
   private _draw(): void {
-    const scene = this.scene;
-    const rx    = scene.scale.width - 4 - PANEL_WIDTH + LIST_W;  // right edge aligns with minimap right
-    const lx    = rx - LIST_W;
-    let curY    = MARGIN;
+    const scene   = this.scene;
+    const lx      = scene.scale.width - 4 - PANEL_WIDTH;          // left edge mirrors minimap _objX()
+    const totalH  = this._calcHeight();
+    const startY  = scene.scale.height - MINIMAP_H - MINIMAP_GAP - MINIMAP_GAP - totalH; // sit above minimap
+    let curY      = startY;
 
     // ── Header ────────────────────────────────────────────────────────────────
     const headerLabel = this._collapsed ? 'PLAYERS ▶' : 'PLAYERS ▼';
@@ -81,13 +106,13 @@ export class PlayerListUI {
         const members = byTeam[ti];
         if (!members || members.length === 0) continue;
         const teamColor = TEAM_COLORS[ti] ?? '#aaaaaa';
-        const thBg = scene.add.rectangle(lx + LIST_W / 2, curY + 10, LIST_W, 20, 0x0a1525, 0.8)
+        const thBg = scene.add.rectangle(lx + LIST_W / 2, curY + TEAM_HEADER_H / 2, LIST_W, TEAM_HEADER_H, 0x0a1525, 0.8)
           .setScrollFactor(0).setDepth(DEPTH).setOrigin(0.5, 0.5);
-        const thTxt = scene.add.text(lx + 8, curY + 10, `TEAM ${ti + 1}`, {
+        const thTxt = scene.add.text(lx + 8, curY + TEAM_HEADER_H / 2, `TEAM ${ti + 1}`, {
           fontSize: '10px', color: teamColor, fontStyle: 'bold',
         }).setScrollFactor(0).setDepth(DEPTH + 1).setOrigin(0, 0.5);
         this.objs.push(thBg, thTxt);
-        curY += 20;
+        curY += TEAM_HEADER_H;
         for (const info of members) {
           curY = this._addRow(lx, curY, info.playerId, info, myId);
         }
@@ -95,8 +120,7 @@ export class PlayerListUI {
     }
 
     // ── Background ────────────────────────────────────────────────────────────
-    const totalH = curY - MARGIN;
-    const bg = scene.add.rectangle(lx + LIST_W / 2, MARGIN + totalH / 2, LIST_W, totalH, 0x070f1a, 0.85)
+    const bg = scene.add.rectangle(lx + LIST_W / 2, startY + totalH / 2, LIST_W, totalH, 0x070f1a, 0.85)
       .setStrokeStyle(1, 0x1a2f44).setScrollFactor(0).setDepth(DEPTH - 1).setOrigin(0.5, 0.5);
     this.objs.push(bg);
   }
