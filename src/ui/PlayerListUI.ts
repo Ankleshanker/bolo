@@ -3,7 +3,7 @@ import { networkManager } from '../network/NetworkManager';
 import type { PlayerInfo } from '../network/types';
 
 const TEAM_COLORS = ['#4488ff', '#ff6644', '#44dd88', '#ffdd44'];
-const LIST_W      = 150;
+const LIST_W      = 128;
 const DEPTH       = 31;
 const MARGIN      = 8;
 const ROW_H       = 18;
