@@ -64,7 +64,7 @@ export class PlayerListUI {
 
   private _draw(): void {
     const scene   = this.scene;
-    const lx      = scene.scale.width - 4 - PANEL_WIDTH;          // left edge mirrors minimap _objX()
+    const lx      = scene.scale.width - LIST_W - 4 - PANEL_WIDTH;  // left edge mirrors minimap _objX()
     const totalH  = this._calcHeight();
     const startY  = scene.scale.height - MINIMAP_H - MINIMAP_GAP - MINIMAP_GAP - totalH; // sit above minimap
     let curY      = startY;
