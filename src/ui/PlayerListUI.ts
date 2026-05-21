@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { networkManager } from '../network/NetworkManager';
 import type { PlayerInfo } from '../network/types';
+import { PANEL_WIDTH } from './ActionPanel';
 
 const TEAM_COLORS = ['#4488ff', '#ff6644', '#44dd88', '#ffdd44'];
 const LIST_W      = 128;
@@ -39,7 +40,7 @@ export class PlayerListUI {
 
   private _draw(): void {
     const scene = this.scene;
-    const rx    = scene.scale.width - MARGIN;  // right edge (screen coords)
+    const rx    = scene.scale.width - 4 - PANEL_WIDTH + LIST_W;  // right edge aligns with minimap right
     const lx    = rx - LIST_W;
     let curY    = MARGIN;
 
