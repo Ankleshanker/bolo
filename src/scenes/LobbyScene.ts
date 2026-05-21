@@ -904,145 +904,167 @@ export class LobbyScene extends Phaser.Scene {
   private _renderCreate() {
     this._clearDynamic();
     const { cx, H } = this;
+
+    // ── Layout constants ───────────────────────────────────────────────────
+    const formW    = 330;
+    const labelW   = 115;
+    const ctrlW    = 195;
+    const formLeft = cx - formW / 2;          // cx - 165
+    const labelX   = formLeft + 10;           // cx - 155, left edge of all labels
+    const ctrlX    = formLeft + labelW + 10;  // cx - 40,  left edge of all controls
+    const ctrlCx   = ctrlX + ctrlW / 2;      // cx + 57.5, center of controls column
+
     const topY = H * 0.34;
+    const titleY = topY - 10;
+    let gy = topY + 22;
+    const rowH = 30;
 
-    this._push(this.add.text(cx, topY - 10, 'CREATE ROOM', { fontSize: '15px', color: C.textDim, letterSpacing: 3 }).setOrigin(0.5));
+    // ── Background card (drawn first, behind everything) ───────────────────
+    // Height is estimated; we draw it before knowing gy's final value,
+    // so use a fixed height that comfortably contains all rows + buttons.
+    const cardH = rowH * 9 + 130;
+    this._push(this.add.rectangle(cx, titleY + cardH / 2 - 4, formW, cardH, 0x081424)
+      .setStrokeStyle(1, C.borderDim));
 
-    // Room name input
-    this._push(this.add.text(cx - 150, topY + 20, 'Room name:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
-    const nameBox = this._push(this.add.rectangle(cx + 40, topY + 20, 220, 26, 0x08121e)
+    // Title
+    this._push(this.add.text(cx, titleY, 'CREATE ROOM', { fontSize: '15px', color: C.textDim, letterSpacing: 3 }).setOrigin(0.5));
+
+    // ── Room name ──────────────────────────────────────────────────────────
+    this._push(this.add.text(labelX, gy, 'Room name:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    const nameBox = this._push(this.add.rectangle(ctrlX + ctrlW / 2, gy, ctrlW, 26, 0x08121e)
       .setStrokeStyle(1, this.nameInputFocused ? C.border : 0x2244aa)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.nameInputFocused = true; this._renderCreate(); })
     );
     void nameBox;
-    this._push(this.add.text(cx + 40, topY + 20,
+    this._push(this.add.text(ctrlX + ctrlW / 2, gy,
       (this.roomNameInput || 'My Room') + (this.nameInputFocused ? '|' : ''),
       { fontSize: '14px', color: this.roomNameInput ? C.white : '#334455' }).setOrigin(0.5));
+    gy += rowH;
 
-    let gy = topY + 55;
-    const rowH = 30;
-
-    // Map type
-    this._push(this.add.text(cx - 150, gy, 'Map:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
-    const mapProcBtn = this._push(this.add.rectangle(cx + 10, gy, 80, 22,
+    // ── Map type ───────────────────────────────────────────────────────────
+    this._push(this.add.text(labelX, gy, 'Map:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    // Two equal buttons side-by-side filling the controls column
+    const mapBtnW = (ctrlW - 6) / 2;  // ~94px each, 6px gap
+    const mapProcBtn = this._push(this.add.rectangle(ctrlX + mapBtnW / 2, gy, mapBtnW, 22,
       this.createSettings.mapType === 'procedural' ? C.panelHi : C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.createSettings.mapType = 'procedural'; this._renderCreate(); })
     );
-    this._push(this.add.text(cx + 10, gy, 'Procedural', { fontSize: '13px', color: C.text }).setOrigin(0.5));
-    const mapBmapBtn = this._push(this.add.rectangle(cx + 100, gy, 80, 22,
+    this._push(this.add.text(ctrlX + mapBtnW / 2, gy, 'Procedural', { fontSize: '13px', color: C.text }).setOrigin(0.5));
+    const mapBmapBtn = this._push(this.add.rectangle(ctrlX + mapBtnW + 6 + mapBtnW / 2, gy, mapBtnW, 22,
       this.createSettings.mapType === 'bmap' ? C.panelHi : C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: this.hasMap })
       .on('pointerdown', () => { if (this.hasMap) { this.createSettings.mapType = 'bmap'; this._renderCreate(); } })
     );
-    this._push(this.add.text(cx + 100, gy, 'Map file', { fontSize: '13px', color: this.hasMap ? C.text : C.textDim }).setOrigin(0.5));
+    this._push(this.add.text(ctrlX + mapBtnW + 6 + mapBtnW / 2, gy, 'Map file', { fontSize: '13px', color: this.hasMap ? C.text : C.textDim }).setOrigin(0.5));
     void mapProcBtn; void mapBmapBtn;
+    gy += rowH;
 
     if (this.createSettings.mapType === 'bmap') {
       const fname = this.uploadedMapName ?? 'No file chosen';
-      gy += rowH;
-      this._push(this.add.text(cx - 150, gy, 'Map file:', { fontSize: '15px', color: C.textDim }).setOrigin(0, 0.5));
-      const fpBtn = this._push(this.add.rectangle(cx + 30, gy, 160, 22, 0x0a1a0a)
+      this._push(this.add.text(labelX, gy, 'Map file:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+      const fpBtn = this._push(this.add.rectangle(ctrlX + ctrlW / 2, gy, ctrlW, 22, 0x0a1a0a)
         .setStrokeStyle(1, 0x336633).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => this._triggerMapUpload())
       );
-      this._push(this.add.text(cx + 30, gy, fname.length > 20 ? fname.slice(0, 18) + '…' : fname, {
+      this._push(this.add.text(ctrlX + ctrlW / 2, gy, fname.length > 22 ? fname.slice(0, 20) + '…' : fname, {
         fontSize: '13px', color: fname === 'No file chosen' ? '#334455' : '#88ffaa',
       }).setOrigin(0.5));
       void fpBtn;
+      gy += rowH;
     }
-    gy += rowH;
 
-    // Team mode
-    this._push(this.add.text(cx - 150, gy, 'Teams:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    // ── Team mode ──────────────────────────────────────────────────────────
+    this._push(this.add.text(labelX, gy, 'Teams:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const teamModes: Array<RoomSettings['teamMode']> = ['ffa', '2team', '4team'];
-    let bx = cx - 60;
-    for (const tm of teamModes) {
+    const tmBtnW = (ctrlW - 2 * 5) / 3;  // ~61px each, 5px gaps
+    for (let i = 0; i < teamModes.length; i++) {
+      const tm     = teamModes[i];
       const active = this.createSettings.teamMode === tm;
-      const btn = this._push(this.add.rectangle(bx, gy, 80, 22, active ? C.panelHi : C.panel)
+      const bx     = ctrlX + i * (tmBtnW + 5) + tmBtnW / 2;
+      const btn = this._push(this.add.rectangle(bx, gy, tmBtnW, 22, active ? C.panelHi : C.panel)
         .setStrokeStyle(1, active ? C.border : C.borderDim).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => { this.createSettings.teamMode = tm; this._renderCreate(); })
       );
-      this._push(this.add.text(bx, gy, TEAM_MODE_LABELS[tm], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
+      this._push(this.add.text(bx, gy, TEAM_MODE_SHORT[tm], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
       void btn;
-      bx += 84;
     }
     gy += rowH;
 
-    // Win condition
-    this._push(this.add.text(cx - 150, gy, 'Win:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    // ── Win condition ──────────────────────────────────────────────────────
+    this._push(this.add.text(labelX, gy, 'Win:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const winConds: Array<RoomSettings['winCondition']> = ['timer', 'domination', 'deathmatch'];
-    bx = cx - 60;
-    for (const wc of winConds) {
+    for (let i = 0; i < winConds.length; i++) {
+      const wc     = winConds[i];
       const active = this.createSettings.winCondition === wc;
-      const btn = this._push(this.add.rectangle(bx, gy, 80, 22, active ? C.panelHi : C.panel)
+      const bx     = ctrlX + i * (tmBtnW + 5) + tmBtnW / 2;
+      const btn = this._push(this.add.rectangle(bx, gy, tmBtnW, 22, active ? C.panelHi : C.panel)
         .setStrokeStyle(1, active ? C.border : C.borderDim).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => { this.createSettings.winCondition = wc; this._renderCreate(); })
       );
-      this._push(this.add.text(bx, gy, WIN_COND_LABELS[wc].split(' ')[0], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
+      this._push(this.add.text(bx, gy, WIN_COND_SHORT[wc], { fontSize: '11px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
       void btn;
-      bx += 84;
     }
     gy += rowH;
 
-    // Friendly fire
-    this._push(this.add.text(cx - 150, gy, 'Friendly Fire:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    // ── Friendly fire ──────────────────────────────────────────────────────
+    this._push(this.add.text(labelX, gy, 'Friendly Fire:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const ffActive = this.createSettings.friendlyFire;
-    const ffBtn = this._push(this.add.rectangle(cx + 10, gy, 60, 22, ffActive ? 0x3a1010 : C.panel)
+    const ffBtn = this._push(this.add.rectangle(ctrlX + 35, gy, 70, 22, ffActive ? 0x3a1010 : C.panel)
       .setStrokeStyle(1, ffActive ? C.red : C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.createSettings.friendlyFire = !this.createSettings.friendlyFire; this._renderCreate(); })
     );
-    this._push(this.add.text(cx + 10, gy, ffActive ? 'ON' : 'OFF', { fontSize: '13px', color: ffActive ? '#ff6666' : C.textGrey }).setOrigin(0.5));
+    this._push(this.add.text(ctrlX + 35, gy, ffActive ? 'ON' : 'OFF', { fontSize: '13px', color: ffActive ? '#ff6666' : C.textGrey }).setOrigin(0.5));
     void ffBtn;
     gy += rowH;
 
-    // Visibility
-    this._push(this.add.text(cx - 150, gy, 'Visibility:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    // ── Visibility ─────────────────────────────────────────────────────────
+    this._push(this.add.text(labelX, gy, 'Visibility:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const pubActive = this.createSettings.isPublic;
-    const pubBtn = this._push(this.add.rectangle(cx + 10, gy, 70, 22, pubActive ? C.panelHi : C.panel)
+    const pubBtn = this._push(this.add.rectangle(ctrlX + 40, gy, 80, 22, pubActive ? C.panelHi : C.panel)
       .setStrokeStyle(1, pubActive ? C.border : C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.createSettings.isPublic = !this.createSettings.isPublic; this._renderCreate(); })
     );
-    this._push(this.add.text(cx + 10, gy, pubActive ? '🔓 Public' : '🔒 Private', { fontSize: '13px', color: C.textGrey }).setOrigin(0.5));
+    this._push(this.add.text(ctrlX + 40, gy, pubActive ? '🔓 Public' : '🔒 Private', { fontSize: '13px', color: C.textGrey }).setOrigin(0.5));
     void pubBtn;
     gy += rowH;
 
-    // Max players
-    this._push(this.add.text(cx - 150, gy, 'Max players:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
-    const decBtn = this._push(this.add.rectangle(cx - 30, gy, 24, 22, C.panel)
+    // ── Max players ────────────────────────────────────────────────────────
+    this._push(this.add.text(labelX, gy, 'Max players:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
+    const decBtn = this._push(this.add.rectangle(ctrlX + 12, gy, 24, 22, C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.createSettings.maxPlayers = Math.max(2, this.createSettings.maxPlayers - 1); this._renderCreate(); })
     );
-    this._push(this.add.text(cx - 30, gy, '−', { fontSize: '16px', color: C.text }).setOrigin(0.5));
-    this._push(this.add.text(cx + 10, gy, String(this.createSettings.maxPlayers), { fontSize: '15px', color: C.white }).setOrigin(0.5));
-    const incBtn = this._push(this.add.rectangle(cx + 50, gy, 24, 22, C.panel)
+    this._push(this.add.text(ctrlX + 12, gy, '−', { fontSize: '16px', color: C.text }).setOrigin(0.5));
+    this._push(this.add.text(ctrlX + 52, gy, String(this.createSettings.maxPlayers), { fontSize: '15px', color: C.white }).setOrigin(0.5));
+    const incBtn = this._push(this.add.rectangle(ctrlX + 92, gy, 24, 22, C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.createSettings.maxPlayers = Math.min(16, this.createSettings.maxPlayers + 1); this._renderCreate(); })
     );
-    this._push(this.add.text(cx + 50, gy, '+', { fontSize: '16px', color: C.text }).setOrigin(0.5));
+    this._push(this.add.text(ctrlX + 92, gy, '+', { fontSize: '16px', color: C.text }).setOrigin(0.5));
     void decBtn; void incBtn;
     gy += rowH;
 
-    // Game length
-    this._push(this.add.text(cx - 150, gy, 'Game length:', { fontSize: '15px', color: C.textDim }).setOrigin(0, 0.5));
+    // ── Game length ────────────────────────────────────────────────────────
+    this._push(this.add.text(labelX, gy, 'Game length:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
     const durations = [5 * 60, 10 * 60, 20 * 60, 30 * 60];
     const durLabels = ['5 min', '10 min', '20 min', '30 min'];
-    let dx = cx - 110;
+    const durBtnW = (ctrlW - 3 * 5) / 4;  // ~44px each, 5px gaps
     for (let di = 0; di < durations.length; di++) {
       const dur    = durations[di];
       const active = this.createSettings.timerSeconds === dur;
-      const dBtn   = this._push(this.add.rectangle(dx, gy, 60, 22, active ? C.panelHi : C.panel)
+      const dx     = ctrlX + di * (durBtnW + 5) + durBtnW / 2;
+      const dBtn   = this._push(this.add.rectangle(dx, gy, durBtnW, 22, active ? C.panelHi : C.panel)
         .setStrokeStyle(1, active ? C.border : C.borderDim).setInteractive({ useHandCursor: true })
         .on('pointerdown', () => { this.createSettings.timerSeconds = dur; this._renderCreate(); })
       );
       this._push(this.add.text(dx, gy, durLabels[di], { fontSize: '13px', color: active ? C.text : C.textGrey }).setOrigin(0.5));
       void dBtn;
-      dx += 64;
     }
-    gy += rowH + 6;
+    gy += rowH + 10;
 
-    // CREATE button
+    // ── CREATE button ──────────────────────────────────────────────────────
     const createBtn = this._push(this.add.rectangle(cx, gy, 180, 42, C.greenBg)
       .setStrokeStyle(2, C.green).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this._createRoom())
@@ -1051,7 +1073,7 @@ export class LobbyScene extends Phaser.Scene {
     );
     this._push(this.add.text(cx, gy, '✓  CREATE', { fontSize: '18px', color: '#88ff88', fontStyle: 'bold' }).setOrigin(0.5));
 
-    // Back button
+    // ── Back button ────────────────────────────────────────────────────────
     const backBtn = this._push(this.add.rectangle(cx, gy + 50, 120, 28, C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
       .on('pointerdown', () => { this.view = 'browse'; this.nameInputFocused = false; this.pendingPrivateRoom = null; this._renderMultiBrowse(); })
@@ -1059,6 +1081,7 @@ export class LobbyScene extends Phaser.Scene {
       .on('pointerout',  () => (backBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panel))
     );
     this._push(this.add.text(cx, gy + 50, '← Back', { fontSize: '14px', color: C.textGrey }).setOrigin(0.5));
+    void ctrlCx;
   }
 
   private _createRoom() {
