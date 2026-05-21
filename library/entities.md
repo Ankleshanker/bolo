@@ -92,7 +92,7 @@ setGhosted(playerId, disconnected: boolean)                  // toggle DC visual
 getSpriteByPlayerId(playerId): Sprite | undefined             // for spectator camera follow
 getPlayerIdBySprite(sprite): string | undefined              // for bullet hit / tank push attribution
 getAlivePlayerIds(): string[]                                // for spectator cycling
-getAlivePillTargets(): {x,y,hidden}[]                        // for host pillbox AI target list
+getAlivePillTargets(): {x,y,hidden?,playerId?}[]              // for host pillbox AI target list
 getGhostVelocity(sprite): { vx: number; vy: number }         // approximate velocity from last 2 snapshots
 ```
 

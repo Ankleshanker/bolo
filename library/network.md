@@ -104,7 +104,7 @@ sendPillboxBulletFired(pillIndex, x, y, ang) // host only — relayed to non-hos
 sendPillboxFire(pillIndex, angleDeg)         // host only — relayed to non-hosts
 sendPillPickupSpawned(id, x, y)              // destroyer emits; server stores + relays to others
 sendPillPickupCollected(id)                  // collector candidate; server first-come guard, then broadcasts
-sendWallHit(tileX, tileY)                    // intermediate hit below transition threshold; not stored in snapshot
+sendWallHit(tileX, tileY)                    // intermediate hit below transition threshold; stored in snapshot as WallHitState
 sendRequestSnapshot()                        // called once at end of setupMultiplayer()
 ```
 
@@ -167,6 +167,7 @@ States: `LOBBY → PLAYING → ENDED`
 - `mines[]` — all active mines; entries removed on `mineDetonated`
 - `boats[]` — all placed boats; entries pruned when their tile is overwritten via `updateTileChanged()` (a tile mutation means the boat is gone)
 - `pillPickups[]` — all uncollected pill pickups `{ id, x, y }`; entries added on `pillPickupSpawned`, removed on `pillPickupCollected`
+- `wallHits[]` — intermediate hit counts for walls not yet transitioned; each entry is `{ tileX, tileY, hits }`; entries added/incremented on each `wallHit` event, removed when `updateTileChanged()` fires for that tile (i.e. when the wall actually transitions). Late joiners receive this via `stateSnapshot` and restore local `wallHits` map so counters survive reconnect.
 - `tankStates[]` — last known tank state per player
 - `timeElapsed` — ms since game start
 
@@ -200,7 +201,7 @@ States: `LOBBY → PLAYING → ENDED`
 | `boatAdded` | `{ tileX, tileY }` | Relayed + stored in snapshot |
 | `pillPickupSpawned` | `{ id, x, y }` | Destroyer emits; stored in snapshot; relayed to all **others** (destroyer already spawned locally) |
 | `pillPickupCollected` | `{ id }` | Collector candidate; server removes from snapshot if present (first-come), broadcasts `S2C_PillPickupCollected` to room; silently dropped if already gone |
-| `wallHit` | `{ tileX, tileY }` | Intermediate wall hit (below transition threshold); relayed to all **others**; not stored in snapshot — late joiners see 0 progress |
+| `wallHit` | `{ tileX, tileY }` | Intermediate wall hit (below transition threshold); relayed to all **others**; stored in snapshot as `wallHits[]` — late joiners receive full counter state |
 | `pillboxBulletFired` | `{ pillIndex, x, y, angleDeg }` | Host only; server relays to all other clients |
 | `pillboxFire` | `{ pillIndex, angleDeg }` | Host only; server relays to all other clients |
 | `soldierState` | `{ x, y, active }` | Volatile; server relays with `playerId` appended |
@@ -278,7 +279,7 @@ In multiplayer, only the host runs the full pillbox AI each frame:
 6. Non-host clients receive `pillboxBulletFired`, fire the bullet at the broadcast world coordinates, and play the sound. No ownership check needed — the host already filtered targets.
 7. The existing `pillboxBullets` vs `tank.sprite` overlap on each machine detects damage locally — no new hit protocol needed.
 
-Non-hosts call `pillboxes.update()` with `bullets = null` and no `isTeammate` callback — `PillboxManager` skips friendly pills entirely (rotation-only for neutral/enemy pills using local tank as the approximate target).
+Non-hosts call `pillboxes.update()` with `bullets = null` and the same `isTeammate` callback — the full target list (local tank + all alive ghosts) is built so friendly pills visually track enemies between host-broadcast shots, but no bullets are fired locally.
 
 **`networkManager.sameTeam(a, b)`** — compares two arbitrary playerIds: FFA = exact match, team modes = same `teamIndex`. Distinct from `isMyTeam()` which is always relative to the local player.
 
