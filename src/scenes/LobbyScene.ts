@@ -74,8 +74,10 @@ export class LobbyScene extends Phaser.Scene {
   private roomNameInput       = '';
   private joinCodeInput       = '';
   private pendingAutoJoinCode = '';
-  private nameInputFocused = false;
-  private codeInputFocused = false;
+  private nameInputFocused   = false;
+  private playerNameFocused  = false;
+  private playerNameInput    = '';
+  private codeInputFocused   = false;
   private createSettings: RoomSettings = {
     mapType:      'procedural',
     mapName:      '',
@@ -247,6 +249,12 @@ export class LobbyScene extends Phaser.Scene {
       else if (e.key === 'Escape') { this._closePrivatePrompt(); }
       return;
     }
+    if (this.playerNameFocused) {
+      if (e.key === 'Backspace') { this.playerNameInput = this.playerNameInput.slice(0, -1); localStorage.setItem(STORAGE_NAME, this.playerNameInput); this._renderCreate(); }
+      else if (e.key.length === 1 && this.playerNameInput.length < 20) { this.playerNameInput += e.key; localStorage.setItem(STORAGE_NAME, this.playerNameInput); this._renderCreate(); }
+      else if (e.key === 'Enter' || e.key === 'Escape') { this.playerNameFocused = false; this._renderCreate(); }
+      return;
+    }
     if (this.nameInputFocused) {
       if (e.key === 'Backspace') { this.roomNameInput = this.roomNameInput.slice(0, -1); this._renderCreate(); }
       else if (e.key.length === 1 && this.roomNameInput.length < 24) { this.roomNameInput += e.key; this._renderCreate(); }
@@ -364,6 +372,7 @@ export class LobbyScene extends Phaser.Scene {
     this.mode = m;
     this.view = 'browse';
     this.nameInputFocused    = false;
+    this.playerNameFocused   = false;
     this.codeInputFocused    = false;
     this.pendingPrivateRoom  = null;
     this.privateCodeFocused  = false;
@@ -928,10 +937,21 @@ export class LobbyScene extends Phaser.Scene {
     // Title
     this._push(this.add.text(cx, titleY, 'CREATE ROOM', { fontSize: '15px', color: C.textDim, letterSpacing: 3 }).setOrigin(0.5));
 
-    // ── Player name (read-only) ────────────────────────────────────────────
-    const playerName = localStorage.getItem(STORAGE_NAME) ?? 'Unknown';
+    // ── Player name (editable) ─────────────────────────────────────────────
+    // Sync from localStorage whenever the field isn't actively being typed into.
+    if (!this.playerNameFocused) {
+      this.playerNameInput = localStorage.getItem(STORAGE_NAME) ?? '';
+    }
     this._push(this.add.text(labelX, gy, 'Player:', { fontSize: '13px', color: C.textDim }).setOrigin(0, 0.5));
-    this._push(this.add.text(ctrlX, gy, playerName, { fontSize: '13px', color: C.white }).setOrigin(0, 0.5));
+    const playerBox = this._push(this.add.rectangle(ctrlX + ctrlW / 2, gy, ctrlW, 26, 0x08121e)
+      .setStrokeStyle(1, this.playerNameFocused ? C.border : 0x2244aa)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => { this.playerNameFocused = true; this.nameInputFocused = false; this._renderCreate(); })
+    );
+    void playerBox;
+    this._push(this.add.text(ctrlX + ctrlW / 2, gy,
+      (this.playerNameInput || 'Enter name…') + (this.playerNameFocused ? '|' : ''),
+      { fontSize: '14px', color: this.playerNameInput ? C.white : '#334455' }).setOrigin(0.5));
     gy += rowH;
 
     // ── Room name ──────────────────────────────────────────────────────────
@@ -1080,7 +1100,7 @@ export class LobbyScene extends Phaser.Scene {
     // ── Back button ────────────────────────────────────────────────────────
     const backBtn = this._push(this.add.rectangle(cx, gy + 50, 120, 28, C.panel)
       .setStrokeStyle(1, C.borderDim).setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => { this.view = 'browse'; this.nameInputFocused = false; this.pendingPrivateRoom = null; this._renderMultiBrowse(); })
+      .on('pointerdown', () => { this.view = 'browse'; this.nameInputFocused = false; this.playerNameFocused = false; this.pendingPrivateRoom = null; this._renderMultiBrowse(); })
       .on('pointerover', () => (backBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panelHi))
       .on('pointerout',  () => (backBtn as Phaser.GameObjects.Rectangle).setFillStyle(C.panel))
     );
