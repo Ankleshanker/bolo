@@ -182,10 +182,19 @@
 
 ## Wall durability uses a hit counter, not a single-step tile lookup — 2026-05-21
 
-**Decision:** Wall destruction is tracked via `WALL_HIT_THRESHOLDS` (a per-tile-type `{ hitsNeeded, nextTile }` map) plus a `wallHits: Map<string, number>` counter in `GameScene`. Walls require 10 cumulative player-bullet hits to reach Crater (5 → DamagedWall, 3 more → Rubble, 2 more → Crater). In multiplayer, intermediate hits are broadcast as `wallHit` events so all clients share progress; tile transitions continue via `tileChanged`. `setTile()` always clears the counter for the changed position so remote syncs reset local progress.
+**Decision:** Wall destruction is tracked via `WALL_HIT_THRESHOLDS` (a per-tile-type `{ hitsNeeded, nextTile }` map) plus a `wallHits: Map<string, number>` counter in `GameScene`. Walls require 10 cumulative player-bullet hits to reach Crater (5 → DamagedWall, 3 more → Rubble, 2 more → Crater). In multiplayer, intermediate hits are broadcast as `wallHit` events so all clients share progress; tile transitions continue via `tileChanged`. `setTile()` always clears the counter for the changed position so remote syncs reset local progress. The server stores `wallHits: WallHitState[]` in the world snapshot so late joiners receive current damage progress.
 **Why:** The original single-step `WALL_DAMAGE_CHAIN = { 8: 9, 9: 6, 6: 3 }` made walls trivially fragile — 3 bullets destroyed any wall. The hit counter lets the existing three visual states (Wall, DamagedWall, Rubble) provide meaningful feedback across 10 hits without adding new tile types or tileset frames.
 **Do not simplify back to a single-step lookup** — that undoes the intentional durability design.
-**Applies to:** `src/scenes/GameScene.ts` (`WALL_HIT_THRESHOLDS`, `hitWall`, `setTile`, `wallHits`), `src/network/NetworkManager.ts` (`sendWallHit`), `src/network/MultiplayerBridge.ts` (`wallHit` handler), `server/src/index.ts` (`wallHit` relay).
+**Applies to:** `src/scenes/GameScene.ts` (`WALL_HIT_THRESHOLDS`, `hitWall`, `setTile`, `wallHits`), `src/network/NetworkManager.ts` (`sendWallHit`), `src/network/MultiplayerBridge.ts` (`wallHit` handler, `applySnapshot`), `server/src/index.ts` (`wallHit` relay), `server/src/GameRoom.ts` (`updateWallHit`, `removeWallHitAt`), `src/network/types.ts` + `server/src/types.ts` (`WallHitState`, `WorldSnapshot.wallHits`).
+
+---
+
+## Pillbox team color passed explicitly, not re-queried per frame — 2026-05-21
+
+**Decision:** The friendly-pill tint color is passed as an optional `teamColor?: number` through `addPill()` and `capture()`, stored nowhere — just applied once as a Phaser sprite tint. `MultiplayerBridge` derives it at the point of state application (`pillboxUpdate` / `applySnapshot`) via `networkManager.getPlayerColor(ownerId)`.
+**Why:** Pillbox tinting happens on capture events (infrequent), not per-frame. Storing the owner's color on the `Pillbox` instance would require updating it whenever the player map changes (e.g. reconnect). Passing it at the event site is simpler, idempotent, and safe: if `getPlayerColor` returns white (player not yet in map), the next snapshot or `pillboxUpdate` will re-apply the correct color.
+**Do not change `applyTeamTint()` to call `networkManager.getPlayerColor()` directly** — `Pillbox` has no reference to the NetworkManager and shouldn't need one; the tint source must flow in from outside. The localStorage fallback in `applyTeamTint` is only exercised for the local player's own pills in SP (where no `teamColor` is provided), which is correct.
+**Applies to:** `src/entities/Pillbox.ts` (`applyTeamTint`, `capture`, constructor), `src/network/MultiplayerBridge.ts` (`pillboxUpdate`, `applySnapshot`).
 
 ---
 

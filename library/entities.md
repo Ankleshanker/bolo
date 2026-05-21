@@ -115,6 +115,8 @@ getGhostVelocity(sprite): { vx: number; vy: number }         // approximate velo
 
 In multiplayer, `owner` is derived from `networkManager.isMyTeam(ownerId)` whenever a `pillboxUpdate` or snapshot is applied.
 
+**Team color tinting:** friendly pills are tinted with the owner's actual team color, not the local player's color. `applyTeamTint(teamColor?: number)` uses the provided hex value; if omitted it falls back to `localStorage` (correct for the local player's own pills in SP). In MP the `MultiplayerBridge` derives the color via `networkManager.getPlayerColor(ownerId)` and passes it to `addPill()` / `capture()` at both `pillboxUpdate` and `applySnapshot` sites.
+
 ### AI (per frame)
 
 - Range: `SHOOT_RANGE_PX = 320`
@@ -123,7 +125,9 @@ In multiplayer, `owner` is derived from `networkManager.isMyTeam(ownerId)` whene
 - Tracks target, snaps barrel to nearest 22.5°
 - Fire cooldown lerps: `COOLDOWN_CRIT (400ms)` at 1 HP → `COOLDOWN_FULL (1500ms)` at full health
 - Pass `bullets = null` for rotation-only mode (non-host clients in MP)
-- **Friendly-pill inertness rule:** without an `isTeammate` callback (SP and non-host rotation), `PillboxManager.update()` skips pills with `owner === 'friendly'` entirely. With an `isTeammate` callback (MP host), the skip is removed and the per-pill target filter governs who gets shot.
+- **Friendly-pill inertness rule (SP only):** in single-player `PillboxManager.update()` is called without an `isTeammate` callback, so pills with `owner === 'friendly'` are skipped entirely. This is intentional — no valid targets exist in SP.
+- **MP host:** `isTeammate = (pillOwnerId, targetPlayerId) => networkManager.sameTeam(...)` is passed; the skip is removed and the per-pill target filter governs who gets shot.
+- **MP non-host (rotation-only):** same `isTeammate` callback is passed with `bullets = null`. The full ghost target list is built (local tank + all alive ghosts) so friendly pills visually track enemies between host-broadcast shots. No bullets are fired locally.
 
 ### Health & damage
 
@@ -166,7 +170,8 @@ Immovable circle: radius 12, offset (4, 4). Blocks tank and builder soldier.
 
 ### Key methods
 
-- `addPill(tileX, tileY, ownerId?)` — creates a new friendly pillbox, sets `pill.ownerId`
+- `addPill(tileX, tileY, ownerId?, teamColor?)` — creates a new friendly pillbox, sets `pill.ownerId`; passes `teamColor` to constructor for tinting
+- `capture(newOwner, teamColor?)` — changes owner, texture, and tint; `teamColor` overrides localStorage when the owner is a remote player
 - `setFacing(angleDeg)` — rotates the sprite to the given angle
 - `fireAt(angleDeg, bullets)` — fires a bullet from the barrel tip at the given angle
 
@@ -174,7 +179,7 @@ Immovable circle: radius 12, offset (4, 4). Blocks tank and builder soldier.
 
 - When a pillbox is damaged/destroyed by the local player: `networkManager.sendPillboxUpdate(idx, ownerId, health, alive)` + `networkManager.sendPillPickupSpawned(id, x, y)`
 - When a player **places** a new pillbox: `sendPillboxUpdate(idx, ownerId, 4, true, tileX, tileY)` — tileX/tileY enable remote creation
-- When received: `pill.ownerId` is synced; `pill.capture(owner)` sets texture; `pill.health = d.health`
+- When received: `pill.ownerId` is synced; `pill.capture(owner, color)` sets texture and tint; `pill.health = d.health`; `color` comes from `networkManager.getPlayerColor(ownerId)`
 - On `setupMultiplayer()`: the **host** pre-broadcasts all map pills as neutral to seed the server snapshot (prevents false domination win)
 - **Host** runs full AI each frame and broadcasts `pillboxBulletFired { pillIndex, x, y, angleDeg }` for every shot; non-hosts fire the bullet locally from the broadcast coordinates
 - The host's `pillboxes.update()` call passes an `isTeammate` callback so each pill's target list is pre-filtered to exclude same-team players (`networkManager.sameTeam(pill.ownerId, target.playerId)`)

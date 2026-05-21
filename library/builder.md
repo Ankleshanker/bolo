@@ -62,6 +62,25 @@ Fixed panel occupying x=0–100px of the canvas (`PANEL_WIDTH = 100`). Five butt
 
 Forest tiles must be cleared with `collectTrees` before any build action can target them.
 
+### Button availability states
+
+`ActionPanel.update(trees, pillsCarried, mines)` is called each frame from `GameScene.updateHUD()`. It computes whether each costed action is affordable and:
+- turns the cost label **red** when conditions aren't met
+- dims the button background to alpha 0.55
+
+The button remains interactive (clicking selects it). Availability is change-detected so only out-of-date buttons are re-rendered.
+
+| Action | Disabled when |
+|---|---|
+| `buildRoad` | `trees < 2` |
+| `buildWall` | `trees < 4` |
+| `buildPillbox` | `trees < 10` **or** `pillsCarried < 1` |
+| `placeMine` | `mines < 1` |
+
+### Build failure feedback
+
+Every early-return path in `tryBuilderAction` pushes a specific message to the `Chyron`. Resource failures (covered by the panel states above) and tile-validity failures both produce a message, e.g. "Collect a pill pickup first.", "Cannot place a pillbox on that tile."
+
 ### Tree cost timing
 
 Tree costs (`buildRoad`, `buildWall`, `buildPillbox`) are **deducted immediately on click**, before the soldier departs. If the soldier fails to arrive (timeout or cancel), resources are not refunded.
@@ -79,7 +98,7 @@ Fires on `pointerdown` anywhere on canvas:
 5. Bounds-check against `MAP_SIZE`
 6. Call `tryBuilderAction(tileX, tileY)`
 
-Actions queue is one deep — if the builder is busy, the click is silently discarded.
+Actions queue is one deep — if the builder is busy (checked at step 2), the click is discarded before `tryBuilderAction` is called, so no chyron message fires and no resources are consumed. Invalid tile or insufficient resource checks inside `tryBuilderAction` do push a chyron message.
 
 ---
 
