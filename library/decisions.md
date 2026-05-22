@@ -189,6 +189,17 @@
 
 ---
 
+## Tree spreading iterates all tiles without a candidate cache — 2026-05-22
+
+**Decision:** `tickTreeSpread()` runs once per second and does a full O(MAP_SIZE²) scan of `mapData.terrain`, rolling `Math.random() < TREE_SPREAD_CHANCE` for every `DisplayTile.Forest` tile it encounters. No pre-built list of forest tile coordinates is maintained.
+**Why:** At 256×256 = 65,536 tiles, the scan completes in well under a frame budget (~0.1 ms). Building and maintaining a forest-tile index adds complexity with no measurable gain at this map size. The tick fires only once per second, so even if the map fills with forest the cost stays trivial.
+**To tune spread rate:** Change `TREE_SPREAD_CHANCE` in `GameScene.ts` (currently `0.001` = 0.1% per forest tile per second). A map with ~1,000 forest tiles produces ~1 new tree/second on average. Raise toward `0.01` for noticeably faster growth; set to `0` to disable entirely.
+**To add a candidate cache if performance ever matters:** Maintain a `Set<number>` of `y * MAP_SIZE + x` forest tile indices, updated in `setTile()` on Forest↔non-Forest transitions. Replace the double loop with iteration over that set.
+**MP authority:** Host-only — the `!networkManager.isHost` guard mirrors the pillbox-AI pattern. Spread tiles are broadcast via the existing `setTile()` → `networkManager.sendTileChanged()` path so all clients stay in sync.
+**Applies to:** `src/scenes/GameScene.ts` (`TREE_SPREAD_CHANCE`, `treeSpreadAccum`, `tickTreeSpread`).
+
+---
+
 ## Pillbox team color passed explicitly, not re-queried per frame — 2026-05-21
 
 **Decision:** The friendly-pill tint color is passed as an optional `teamColor?: number` through `addPill()` and `capture()`, stored nowhere — just applied once as a Phaser sprite tint. `MultiplayerBridge` derives it at the point of state application (`pillboxUpdate` / `applySnapshot`) via `networkManager.getPlayerColor(ownerId)`.

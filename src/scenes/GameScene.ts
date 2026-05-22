@@ -30,6 +30,10 @@ const WALL_HIT_THRESHOLDS: Record<number, { hitsNeeded: number; nextTile: number
   6: { hitsNeeded: 2, nextTile: 3 },
 };
 const GAME_DURATION_MS = 5 * 60 * 1000;
+// Probability that a given forest tile spreads to one adjacent grass tile per 1-second tick.
+// At 0.001, a map with ~1000 forest tiles spawns ~1 new tree/second on average.
+// To speed up growth: raise toward 0.01. To disable: set to 0.
+const TREE_SPREAD_CHANCE = 0.001;
 
 const COST_ROAD    = 2;
 const COST_WALL    = 4;
@@ -100,7 +104,8 @@ export class GameScene extends Phaser.Scene {
   private ghostManager: GhostTankManager | null = null;
   private remoteBullets: BulletManager | null = null;
   private remoteBulletKillZones: Map<string, number> = new Map();
-  private mpSendAccum   = 0;     // ms accumulator for 20 Hz send throttle
+  private mpSendAccum      = 0;  // ms accumulator for 20 Hz send throttle
+  private treeSpreadAccum  = 0;  // ms accumulator for 1 Hz tree spread tick
   private mpGameStart: S2C_GameStart | null = null;
   private chyron!: Chyron;
   private _tankPushCooldowns = new Map<string, number>();
@@ -117,6 +122,7 @@ export class GameScene extends Phaser.Scene {
     this.mpGameStart     = data?.gameStart ?? null;
     this.gameTimer       = GAME_DURATION_MS;
     this.mpSendAccum     = 0;
+    this.treeSpreadAccum = 0;
     this._mineDropTileX  = -1;
     this._mineDropTileY  = -1;
     this.wallHits        = new Map();
@@ -295,6 +301,7 @@ export class GameScene extends Phaser.Scene {
     this.settingsPanel.update(delta);
     this.minimap.update(this.tank.x, this.tank.y, this.dead, (this.mpBridge?.spectatorMode ?? false), this.multiplayerMode);
     this.updateHUD();
+    this.tickTreeSpread(delta);
 
     // 20 Hz state send
     if (this.multiplayerMode) {
@@ -897,6 +904,30 @@ export class GameScene extends Phaser.Scene {
         sprite.destroy();
         this.pillPickups.splice(i, 1);
         break;
+      }
+    }
+  }
+
+  private tickTreeSpread(delta: number) {
+    if (this.multiplayerMode && !networkManager.isHost) return;
+    this.treeSpreadAccum += delta;
+    if (this.treeSpreadAccum < 1000) return;
+    this.treeSpreadAccum = 0;
+
+    const terrain = this.mapData.terrain;
+    for (let y = 0; y < MAP_SIZE; y++) {
+      for (let x = 0; x < MAP_SIZE; x++) {
+        if (terrain[y][x] !== DisplayTile.Forest) continue;
+        if (Math.random() >= TREE_SPREAD_CHANCE) continue;
+        const dx = (Math.floor(Math.random() * 3)) - 1;
+        const dy = (Math.floor(Math.random() * 3)) - 1;
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || nx >= MAP_SIZE || ny < 0 || ny >= MAP_SIZE) continue;
+        if (terrain[ny][nx] === DisplayTile.Grass) {
+          this.setTile(nx, ny, DisplayTile.Forest);
+        }
       }
     }
   }

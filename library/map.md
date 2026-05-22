@@ -20,7 +20,7 @@ All tile constants live here. Always import from here — never define inline.
 | 2 | Swamp | Sluggish terrain |
 | 3 | Crater | Uneven ground |
 | 4 | Road | Fast terrain, 16-variant auto-tiling |
-| 5 | Forest | Slow; provides stealth; harvestable for trees; cleared by bullets |
+| 5 | Forest | Slow; provides stealth; harvestable for trees; cleared by bullets; spreads to adjacent Grass over time |
 | 6 | Rubble | Slightly slow |
 | 7 | Grass | Baseline speed |
 | 8 | Wall | Solid — physics collision block |
@@ -134,6 +134,17 @@ Defined as `WALL_HIT_THRESHOLDS: Record<number, { hitsNeeded: number; nextTile: 
 In multiplayer, intermediate hits (below a transition threshold) are broadcast as `wallHit` events so all clients share cumulative progress. Tile transitions continue to broadcast via `tileChanged` as before.
 
 Pillbox bullets don't damage terrain.
+
+---
+
+## Tree Spreading
+
+Once per second, `GameScene.tickTreeSpread()` iterates all 256×256 terrain tiles. For each `DisplayTile.Forest` tile it rolls `Math.random() < TREE_SPREAD_CHANCE` (default `0.001`). On a hit, it picks one random tile from the 8 neighbors (including diagonals); if that neighbor is `DisplayTile.Grass`, it is converted to Forest via `setTile()`.
+
+- **Rate:** ~1 new tree/second on a map with ~1,000 forest tiles. Adjust `TREE_SPREAD_CHANCE` in `GameScene.ts` to tune — `0.01` is noticeably fast; `0` disables.
+- **Target:** Grass only. Sea, roads, walls, craters, etc. are never overwritten.
+- **MP authority:** Host-only. The existing `setTile()` → `networkManager.sendTileChanged()` path broadcasts each new tile to all clients.
+- **Performance:** Full O(65,536) scan each tick. See `library/decisions.md` ("Tree spreading iterates all tiles without a candidate cache") for why this is fine and how to add a cache if it ever matters.
 
 ---
 

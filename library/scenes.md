@@ -239,7 +239,8 @@ interface GameSceneInitData {
 13. `checkPillPickup()`, `checkMines()`, `checkBaseInteraction()`
 14. `settingsPanel.update(delta)`
 15. `updateMinimap()`, `updateHUD()`
-16. 20 Hz send tick (MP only): accumulator-gated, emits `sendTankState()` and `sendSoldierState(builder.x, builder.y, builder.isBusy)`
+16. `tickTreeSpread(delta)` — 1 Hz accumulator-gated tree spread (host-only in MP; see below)
+17. 20 Hz send tick (MP only): accumulator-gated, emits `sendTankState()` and `sendSoldierState(builder.x, builder.y, builder.isBusy)`
 
 ### `shutdown()`
 
