@@ -152,8 +152,8 @@ Immovable circle: radius 12, offset (4, 4). Blocks tank and builder soldier.
 3. Builder soldier arrives → `PillboxManager.addPill(tileX, tileY)` creates a new friendly pillbox
 
 **Multiplayer:**
-1. Destroyer's client spawns pickup sprite locally and emits `pillPickupSpawned { id, x, y }` to server
-2. Server stores the pickup in the world snapshot and relays to all other clients, who also spawn the sprite
+1. Destroyer's client emits `pillPickupSpawned { id, x, y }` to server; no pickup sprite is created locally. The server stores the pickup in the world snapshot and relays `pillPickupSpawned` to **all clients including the destroyer** via `io.to(room)`, which creates the sprite on every client.
+2. All clients (including the destroyer) spawn the pickup sprite on receipt of `pillPickupSpawned`
 3. Any tank that drives over the pickup tile sends `pillPickupCollected { id }` to the server
 4. Server applies a first-come guard: if the pickup still exists, removes it from the snapshot and broadcasts `pillPickupCollected { id, collectorId }` to all clients; if already gone, silently drops
 5. All clients destroy the pickup sprite on receipt; the winner (`collectorId`) sets `tank.pillsCarried = 1`
@@ -186,6 +186,8 @@ Immovable circle: radius 12, offset (4, 4). Blocks tank and builder soldier.
 - Pickup collection is server-authoritative via `pillPickupSpawned` / `pillPickupCollected` events (see Capture flow above)
 
 **Known limitation:** If two players simultaneously hold pill pickups and place pillboxes at the same time, their locally-assigned array indices may collide (both = `mapPills.length`). The server's next full snapshot will re-sync state, but the brief window can cause mis-attribution of ownership. This is rare because pickup collection is first-come-first-served.
+
+A second simultaneous-destroy race exists: if two clients destroy the same pill before either `pillboxUpdate {alive:false}` arrives at the other, both may emit `pillPickupSpawned` and the server will store two pickups at the same tile. The first-come `pillPickupCollected` guard prevents double-collection, so the only symptom is a phantom uncollectable pickup sprite. This is rare and accepted as technical debt.
 
 ---
 

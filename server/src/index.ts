@@ -362,7 +362,7 @@ io.on('connection', (socket) => {
     if (!room || room.state !== 'PLAYING') return;
     room.addPillPickup(data);
     const payload: S2C_PillPickupSpawned = data;
-    socket.to(room.roomId).emit('pillPickupSpawned', payload);
+    io.to(room.roomId).emit('pillPickupSpawned', payload);
   });
 
   socket.on('pillPickupCollected', (data: C2S_PillPickupCollected) => {
